@@ -1,0 +1,435 @@
+{
+  "name": "AI Lead Qualification Chat Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat-agent",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://your-domain.com"
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "chat-agent"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversations (session_id) VALUES ('{{ $json.body.session_id }}') ON CONFLICT (session_id) DO UPDATE SET updated_at = NOW() RETURNING id",
+        "options": {}
+      },
+      "id": "upsert-conversation",
+      "name": "Upsert Conversation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO messages (conversation_id, role, content) VALUES ((SELECT id FROM conversations WHERE session_id = '{{ $('Webhook Trigger').item.json.body.session_id }}'), 'user', '{{ $('Webhook Trigger').item.json.body.message.replace(/'/g, \"''\") }}') RETURNING id",
+        "options": {}
+      },
+      "id": "save-user-message",
+      "name": "Save User Message",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [500, 300],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT role, content FROM messages WHERE conversation_id = (SELECT id FROM conversations WHERE session_id = '{{ $('Webhook Trigger').item.json.body.session_id }}') ORDER BY created_at ASC LIMIT 20",
+        "options": {}
+      },
+      "id": "load-memory",
+      "name": "Load Conversation History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [750, 300],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store data we'll need later in the workflow\n$execution.customData.set('session_id', String($('Webhook Trigger').item.json.body.session_id));\n$execution.customData.set('user_message', String($('Webhook Trigger').item.json.body.message));\n\n// Format conversation history for Claude API\nconst inputItems = $input.all();\nconst messages = inputItems.map(item => ({\n  role: item.json.role,\n  content: item.json.content\n}));\n\n// Build the full Claude API request body\n// CUSTOMIZE THIS PROMPT FOR YOUR USE CASE\nconst systemPrompt = `You are a friendly AI assistant on a quote page. Your job is to:\n\n1. QUALIFY LEADS by understanding their needs\n2. ASK ABOUT: What problems they're facing, what tools they use, their timeline\n3. BE CONVERSATIONAL - friendly, not salesy\n4. COLLECT EMAIL at the end to send them a quote\n\nConversation flow:\n- First: Acknowledge their pain point, ask what tools they currently use\n- Second: Ask how often this task happens (triggered vs scheduled)\n- Third: Ask about timeline (ASAP vs exploring)\n- Fourth: Say you have a good picture, ask for email to send quote\n- Fifth: Confirm email saved, team will be in touch within 24 hours\n\nKeep responses SHORT (2-3 sentences max). Be warm but professional.\n\nIf they provide an email address, respond with confirmation and end the conversation.\n\nDO NOT make up pricing. Say the team will provide a custom quote.`;\n\nreturn [{\n  json: {\n    model: 'claude-sonnet-4-20250514',\n    max_tokens: 300,\n    system: systemPrompt,\n    messages: messages\n  }\n}];"
+      },
+      "id": "format-messages",
+      "name": "Format Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.model, max_tokens: $json.max_tokens, system: $json.system, messages: $json.messages }) }}",
+        "options": {}
+      },
+      "id": "claude-ai",
+      "name": "Claude AI (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_ANTHROPIC_CREDENTIAL_ID",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO messages (conversation_id, role, content) VALUES ((SELECT id FROM conversations WHERE session_id = '{{ $execution.customData.get(\"session_id\") }}'), 'assistant', '{{ $json.content[0].text.replace(/'/g, \"''\") }}') RETURNING id",
+        "options": {}
+      },
+      "id": "save-assistant-message",
+      "name": "Save Assistant Message",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1500, 300],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "email-check",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-for-email",
+      "name": "Check for Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check for and extract email from message\nconst message = $execution.customData.get('user_message');\nconst emailMatch = message.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/);\nconst email = emailMatch ? emailMatch[0] : null;\nconst hasEmail = email !== null;\n\nreturn [{\n  json: {\n    email: email,\n    hasEmail: hasEmail,\n    session_id: $execution.customData.get('session_id')\n  }\n}];"
+      },
+      "id": "extract-email",
+      "name": "Extract Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1750, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH conv AS (SELECT id FROM conversations WHERE session_id = '{{ $json.session_id }}'), summary AS (SELECT string_agg(role || ': ' || content, E'\\n' ORDER BY created_at) as chat FROM messages WHERE conversation_id = (SELECT id FROM conv)) INSERT INTO leads (conversation_id, email, chat_summary) VALUES ((SELECT id FROM conv), '{{ $json.email }}', (SELECT chat FROM summary)) RETURNING id, email, chat_summary",
+        "options": {}
+      },
+      "id": "save-lead",
+      "name": "Save Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2250, 100],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversations SET status = 'completed' WHERE session_id = '{{ $('Extract Email').first().json.session_id }}'",
+        "options": {}
+      },
+      "id": "mark-completed",
+      "name": "Mark Completed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2500, 100],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 200, system: 'Summarize this sales chat in 2-3 bullet points for the sales team. Focus on: what they need, what tools they use, and their timeline. Be concise.', messages: [{ role: 'user', content: $('Save Lead').first().json.chat_summary || 'No chat history available' }] }) }}",
+        "options": {}
+      },
+      "id": "summarize-chat",
+      "name": "Summarize Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2750, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_ANTHROPIC_CREDENTIAL_ID",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_SLACK_WEBHOOK_URL",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: 'New lead from chat!\\n\\nEmail: ' + $('Save Lead').first().json.email + '\\n\\nChat Summary:\\n' + ($json.content[0].text || 'See database for full conversation') }) }}",
+        "options": {}
+      },
+      "id": "notify-team",
+      "name": "Notify Team (Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3000, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, response: $('Claude AI (HTTP)').first().json.content[0].text, session_id: $execution.customData.get('session_id') }) }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2250, 500]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Upsert Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Conversation": {
+      "main": [
+        [
+          {
+            "node": "Save User Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save User Message": {
+      "main": [
+        [
+          {
+            "node": "Load Conversation History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Conversation History": {
+      "main": [
+        [
+          {
+            "node": "Format Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Messages": {
+      "main": [
+        [
+          {
+            "node": "Claude AI (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Save Assistant Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Assistant Message": {
+      "main": [
+        [
+          {
+            "node": "Extract Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email": {
+      "main": [
+        [
+          {
+            "node": "Check for Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Email": {
+      "main": [
+        [
+          {
+            "node": "Save Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Lead": {
+      "main": [
+        [
+          {
+            "node": "Mark Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Completed": {
+      "main": [
+        [
+          {
+            "node": "Summarize Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Chat": {
+      "main": [
+        [
+          {
+            "node": "Notify Team (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Team (Slack)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-12-11T00:00:00.000Z",
+  "versionId": "1"
+}

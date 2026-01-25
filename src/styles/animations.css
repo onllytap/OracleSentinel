@@ -1,0 +1,117 @@
+/* Custom animations for RAG chatbot */
+
+/* Fade in animation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Slide up animation */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Shimmer effect for text - Shadcn style */
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* Dots animation */
+@keyframes dots {
+
+  0%,
+  20% {
+    content: '.';
+  }
+
+  40% {
+    content: '..';
+  }
+
+  60%,
+  100% {
+    content: '...';
+  }
+}
+
+/* Glow pulse */
+@keyframes glow-pulse {
+
+  0%,
+  100% {
+    opacity: 0.5;
+    filter: blur(8px);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(12px);
+  }
+}
+
+/* Animation classes */
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out forwards;
+}
+
+/* Shadcn-style shimmer text */
+.shimmer-text {
+  background: linear-gradient(90deg,
+      #64748b 0%,
+      #94a3b8 25%,
+      #3b82f6 50%,
+      #94a3b8 75%,
+      #64748b 100%);
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Animated dots */
+.shimmer-dots {
+  display: inline-block;
+  width: 1.5em;
+  text-align: left;
+  animation: none;
+}
+
+.shimmer-dots::after {
+  content: '...';
+  animation: dots 1.5s steps(3, end) infinite;
+}
+
+/* Hide the static dots, show animated ones */
+.shimmer-dots {
+  font-size: 0;
+}
+
+.shimmer-dots::after {
+  font-size: 0.875rem;
+}
