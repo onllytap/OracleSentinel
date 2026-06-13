@@ -33,7 +33,7 @@ async function analyzeRagPipeline() {
     console.log('Simulating query: "Je cherche un appartement aux sables"');
 
     try {
-        const chunks = await KnowledgeService.searchKnowledge("Je cherche un appartement aux sables");
+        const chunks = await KnowledgeService.searchKnowledge({ query: "Je cherche un appartement aux sables", tenantId: 'default' });
 
         console.log(`\n📚 Retrieved ${chunks.length} chunks of knowledge.`);
 

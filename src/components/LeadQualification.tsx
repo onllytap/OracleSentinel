@@ -135,7 +135,7 @@ export function LeadQualification({ onStepComplete, onComplete }: LeadQualificat
         <p className="text-gray-800 text-[15px] leading-relaxed">{currentQ.question}</p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {currentQ.options.map((option: string) => (
+        {(currentQ.options as string[]).map((option: string) => (
           <button
             key={option}
             onClick={() => handleSelect(option)}

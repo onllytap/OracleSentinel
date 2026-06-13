@@ -1,0 +1,1793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AI Agent Factory — Command Center</title>
+  <style>
+    :root {
+      --bg: #050a18;
+      --surface: #0b1228;
+      --surface2: #111d3a;
+      --border: #1a2a50;
+      --border-light: #243560;
+      --text: #e5e7eb;
+      --text-muted: #8892b0;
+      --primary: #6366f1;
+      --primary-glow: rgba(99,102,241,0.3);
+      --success: #22c55e;
+      --success-bg: rgba(34,197,94,0.1);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245,158,11,0.1);
+      --danger: #ef4444;
+      --danger-bg: rgba(239,68,68,0.1);
+      --accent: #06b6d4;
+      --font: 'SF Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Consolas, monospace;
+      --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:var(--font-ui); background:var(--bg); color:var(--text); min-height:100vh; }
+
+    /* Layout */
+    .factory-shell { display:flex; min-height:100vh; }
+    .sidebar { width:240px; background:var(--surface); border-right:1px solid var(--border); padding:16px 0; flex-shrink:0; display:flex; flex-direction:column; }
+    .main { flex:1; overflow-y:auto; padding:24px; max-height:100vh; }
+
+    /* Sidebar */
+    .sidebar-brand { padding:12px 20px; border-bottom:1px solid var(--border); margin-bottom:12px; }
+    .sidebar-brand h1 { font-size:15px; font-weight:700; background:linear-gradient(135deg,var(--primary),var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .sidebar-brand p { font-size:11px; color:var(--text-muted); margin-top:4px; }
+    .nav-item { display:flex; align-items:center; gap:10px; padding:10px 20px; cursor:pointer; color:var(--text-muted); font-size:13px; transition:all 0.15s; border-left:3px solid transparent; }
+    .nav-item:hover { background:var(--surface2); color:var(--text); }
+    .nav-item.active { background:var(--surface2); color:var(--primary); border-left-color:var(--primary); font-weight:600; }
+    .nav-item svg { width:16px; height:16px; flex-shrink:0; }
+    .sidebar-footer { margin-top:auto; padding:12px 20px; border-top:1px solid var(--border); }
+    .sidebar-footer .status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+    .sidebar-footer .status-dot.ok { background:var(--success); box-shadow:0 0 8px var(--success); }
+    .sidebar-footer .status-dot.err { background:var(--danger); box-shadow:0 0 8px var(--danger); }
+    .sidebar-footer span { font-size:11px; color:var(--text-muted); }
+
+    /* Panels */
+    .panel { display:none; }
+    .panel.active { display:block; }
+    .panel-header { margin-bottom:20px; }
+    .panel-header h2 { font-size:20px; font-weight:700; }
+    .panel-header p { font-size:13px; color:var(--text-muted); margin-top:4px; }
+
+    /* Cards */
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .card-header h3 { font-size:14px; font-weight:600; }
+    .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+    .card-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+
+    /* Stat Cards */
+    .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
+    .stat-card .label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; }
+    .stat-card .value { font-size:28px; font-weight:700; font-family:var(--font); margin:4px 0; }
+    .stat-card .sub { font-size:11px; color:var(--text-muted); }
+    .stat-card.success { border-color:var(--success); }
+    .stat-card.warning { border-color:var(--warning); }
+    .stat-card.danger { border-color:var(--danger); }
+
+    /* Forms */
+    .form-group { margin-bottom:14px; }
+    .form-group label { display:block; font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+    input[type=text], input[type=password], input[type=number], input[type=url], input[type=email], select, textarea {
+      width:100%; padding:10px 14px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); font-size:13px; font-family:var(--font); outline:none; transition:border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-glow); }
+    textarea { min-height:100px; resize:vertical; }
+
+    /* Buttons */
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:10px 20px; border:none; border-radius:var(--radius-sm); cursor:pointer; font-size:13px; font-weight:600; transition:all 0.15s; }
+    .btn-primary { background:var(--primary); color:#fff; }
+    .btn-primary:hover { opacity:0.9; box-shadow:0 0 20px var(--primary-glow); }
+    .btn-success { background:var(--success); color:#fff; }
+    .btn-danger { background:var(--danger); color:#fff; }
+    .btn-ghost { background:transparent; color:var(--text-muted); border:1px solid var(--border); }
+    .btn-ghost:hover { border-color:var(--border-light); color:var(--text); }
+    .btn-lg { padding:14px 28px; font-size:15px; border-radius:var(--radius); }
+    .btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-group { display:flex; gap:8px; margin-top:16px; }
+
+    /* Toggle */
+    .toggle { position:relative; display:inline-block; width:40px; height:22px; }
+    .toggle input { opacity:0; width:0; height:0; }
+    .toggle .slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:var(--surface2); border:1px solid var(--border); border-radius:11px; transition:0.2s; }
+    .toggle .slider:before { content:""; position:absolute; height:16px; width:16px; left:2px; bottom:2px; background:var(--text-muted); border-radius:50%; transition:0.2s; }
+    .toggle input:checked + .slider { background:var(--primary); border-color:var(--primary); }
+    .toggle input:checked + .slider:before { transform:translateX(18px); background:#fff; }
+
+    /* Tags */
+    .tag { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; }
+    .tag-success { background:var(--success-bg); color:var(--success); }
+    .tag-warning { background:var(--warning-bg); color:var(--warning); }
+    .tag-danger { background:var(--danger-bg); color:var(--danger); }
+    .tag-info { background:rgba(6,182,212,0.1); color:var(--accent); }
+
+    /* Build Steps */
+    .build-step { display:flex; align-items:center; gap:12px; padding:10px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:8px; }
+    .build-step .step-icon { width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; }
+    .build-step .step-icon.pending { background:var(--surface2); color:var(--text-muted); }
+    .build-step .step-icon.running { background:var(--primary-glow); color:var(--primary); animation:pulse 1.5s infinite; }
+    .build-step .step-icon.success { background:var(--success-bg); color:var(--success); }
+    .build-step .step-icon.warning { background:var(--warning-bg); color:var(--warning); }
+    .build-step .step-icon.failure { background:var(--danger-bg); color:var(--danger); }
+    .build-step .step-name { font-size:13px; font-weight:500; flex:1; }
+    .build-step .step-time { font-size:11px; color:var(--text-muted); font-family:var(--font); }
+    .build-step .step-msg { font-size:11px; color:var(--text-muted); max-width:400px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    /* Readiness Checks */
+    .check-item { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
+    .check-item:last-child { border-bottom:none; }
+    .check-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .check-dot.pass { background:var(--success); }
+    .check-dot.warn { background:var(--warning); }
+    .check-dot.fail { background:var(--danger); }
+    .check-name { font-size:13px; font-weight:500; min-width:180px; }
+    .check-msg { font-size:12px; color:var(--text-muted); }
+
+    /* Log viewer */
+    .log-viewer { background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; max-height:400px; overflow-y:auto; font-family:var(--font); font-size:12px; line-height:1.6; }
+    .log-entry { padding:2px 0; }
+    .log-entry .ts { color:var(--text-muted); }
+    .log-entry .level-info { color:var(--accent); }
+    .log-entry .level-warn { color:var(--warning); }
+    .log-entry .level-error { color:var(--danger); }
+    .log-entry .level-debug { color:var(--text-muted); }
+    .log-entry .msg { color:var(--text); }
+
+    /* Field mapping table */
+    .mapping-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .mapping-table th { text-align:left; padding:8px 12px; background:var(--surface2); color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+    .mapping-table td { padding:8px 12px; border-bottom:1px solid var(--border); }
+    .mapping-table .arrow { color:var(--primary); font-weight:bold; }
+
+    /* Matrix table */
+    .matrix-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .matrix-table th { text-align:left; padding:8px 10px; background:var(--surface2); color:var(--text-muted); font-size:11px; }
+    .matrix-table td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+    .matrix-table tr:hover { background:var(--surface2); }
+
+    /* Color pickers row */
+    .color-row { display:flex; gap:12px; flex-wrap:wrap; }
+    .color-row .form-group { flex:1; min-width:120px; }
+    .color-preview { display:inline-block; width:20px; height:20px; border-radius:4px; border:1px solid var(--border); vertical-align:middle; margin-right:6px; }
+
+    /* Slider */
+    input[type=range] { -webkit-appearance:none; width:100%; height:6px; background:var(--surface2); border-radius:3px; outline:none; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:var(--primary); cursor:pointer; }
+    .range-label { display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-top:4px; }
+
+    /* Login */
+    .login-overlay { display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--bg); }
+    .login-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:32px; width:360px; }
+    .login-card h1 { font-size:18px; margin-bottom:4px; background:linear-gradient(135deg,var(--primary),var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .login-card p { font-size:12px; color:var(--text-muted); margin-bottom:20px; }
+
+    /* Animations */
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .spinner { display:inline-block; width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
+
+    /* Build Result Banner */
+    .build-banner { padding:20px 24px; border-radius:var(--radius); margin-bottom:16px; display:none; }
+    .build-banner.success { background:linear-gradient(135deg, rgba(34,197,94,0.12), rgba(34,197,94,0.04)); border:1px solid var(--success); }
+    .build-banner.failure { background:linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.04)); border:1px solid var(--danger); }
+    .build-banner h3 { font-size:18px; margin-bottom:8px; display:flex; align-items:center; gap:10px; }
+    .build-banner.success h3 { color:var(--success); }
+    .build-banner.failure h3 { color:var(--danger); }
+    .build-banner p { font-size:13px; color:var(--text-muted); line-height:1.6; }
+
+    /* Embed Code Box */
+    .embed-box { background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px 16px; margin-top:12px; position:relative; }
+    .embed-box code { font-family:var(--font); font-size:12px; color:var(--accent); word-break:break-all; display:block; line-height:1.7; }
+    .embed-box .copy-btn { position:absolute; top:8px; right:8px; background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); padding:4px 12px; border-radius:6px; font-size:11px; cursor:pointer; }
+    .embed-box .copy-btn:hover { color:var(--text); border-color:var(--primary); }
+
+    /* Fix Hint */
+    .fix-hint { background:var(--surface2); border-left:3px solid var(--warning); padding:12px 16px; margin-top:12px; border-radius:0 var(--radius-sm) var(--radius-sm) 0; }
+    .fix-hint strong { color:var(--warning); font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
+    .fix-hint p { font-size:13px; color:var(--text); margin-top:4px; line-height:1.6; }
+
+    /* Helper text */
+    .helper-text { font-size:12px; color:var(--text-muted); line-height:1.5; padding:8px 0; }
+    .helper-text strong { color:var(--warning); }
+
+    /* Section explanation */
+    .section-explain { background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 16px; margin-bottom:16px; font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .section-explain b { color:var(--text); }
+
+    /* Responsive */
+    @media (max-width:900px) {
+      .sidebar { display:none; }
+      .card-grid-3 { grid-template-columns:1fr; }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width:6px; }
+    ::-webkit-scrollbar-track { background:var(--bg); }
+    ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginView" class="login-overlay">
+  <div class="login-card">
+    <h1>AI Agent Factory</h1>
+    <p>Command Center — Enter your admin key to continue</p>
+    <div class="form-group">
+      <input id="loginKey" type="password" placeholder="Admin API Key" autocomplete="off"/>
+    </div>
+    <button id="btnLogin" class="btn btn-primary" style="width:100%">Authenticate</button>
+  </div>
+</div>
+
+<!-- MAIN SHELL -->
+<div id="mainShell" class="factory-shell" style="display:none">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <h1>Agent Factory</h1>
+      <p>Command Center v1.0</p>
+    </div>
+    <div class="nav-item active" data-panel="overview">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Overview
+    </div>
+    <div class="nav-item" data-panel="identity">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Identity
+    </div>
+    <div class="nav-item" data-panel="personality">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      Personality
+    </div>
+    <div class="nav-item" data-panel="llm">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      LLM Provider
+    </div>
+    <div class="nav-item" data-panel="crm">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      CRM Engine
+    </div>
+    <div class="nav-item" data-panel="knowledge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      Knowledge / XML
+    </div>
+    <div class="nav-item" data-panel="apis">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      API Secrets
+    </div>
+    <div class="nav-item" data-panel="webhooks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      Webhooks
+    </div>
+    <div class="nav-item" data-panel="observability">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Observability
+    </div>
+    <div class="nav-item" data-panel="matrix">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>
+      Behavior Matrix
+    </div>
+    <div class="nav-item" data-panel="build">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      Build & Deploy
+    </div>
+    <div class="sidebar-footer">
+      <span class="status-dot ok" id="statusDot"></span>
+      <span id="statusText">System Online</span>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- OVERVIEW PANEL -->
+    <div id="panel-overview" class="panel active">
+      <div class="panel-header">
+        <h2>System Overview</h2>
+        <p>Real-time health and configuration status</p>
+      </div>
+      <div class="card-grid-3" id="overviewStats">
+        <div class="stat-card" id="statUptime"><div class="label">Uptime</div><div class="value">--</div><div class="sub">Server runtime</div></div>
+        <div class="stat-card" id="statCrmPushes"><div class="label">CRM Pushes (24h)</div><div class="value">--</div><div class="sub">Total push attempts</div></div>
+        <div class="stat-card" id="statSuccess"><div class="label">Success Rate</div><div class="value">--</div><div class="sub">Push success percentage</div></div>
+      </div>
+      <div class="card-grid" style="margin-top:16px">
+        <div class="card">
+          <div class="card-header"><h3>System Health</h3><button class="btn btn-ghost" onclick="refreshOverview()">Refresh</button></div>
+          <div id="healthChecks"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Active Configuration</h3></div>
+          <div id="activeConfig"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- IDENTITY PANEL -->
+    <div id="panel-identity" class="panel">
+      <div class="panel-header">
+        <h2>Agent Identity & Branding</h2>
+        <p>Configure the visual identity and branding of your AI agent</p>
+      </div>
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-header"><h3>Core Identity</h3></div>
+          <div class="form-group"><label>Agent Name</label><input type="text" id="cfg-agentName" placeholder="My AI Agent"/></div>
+          <div class="form-group"><label>Agency Name</label><input type="text" id="cfg-agencyName" placeholder="My Agency"/></div>
+          <div class="form-group"><label>Logo URL</label><input type="url" id="cfg-logoUrl" placeholder="https://..."/></div>
+          <div class="form-group"><label>Avatar URL</label><input type="url" id="cfg-avatarUrl" placeholder="https://..."/></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Theme Colors</h3></div>
+          <div class="color-row">
+            <div class="form-group"><label>Primary</label><input type="text" id="cfg-colorPrimary" value="#6366f1"/></div>
+            <div class="form-group"><label>Secondary</label><input type="text" id="cfg-colorSecondary" value="#8b5cf6"/></div>
+            <div class="form-group"><label>Accent</label><input type="text" id="cfg-colorAccent" value="#06b6d4"/></div>
+          </div>
+          <div class="color-row" style="margin-top:8px">
+            <div class="form-group"><label>Background</label><input type="text" id="cfg-colorBg" value="#0b1220"/></div>
+            <div class="form-group"><label>Surface</label><input type="text" id="cfg-colorSurface" value="#0f172a"/></div>
+            <div class="form-group"><label>Text</label><input type="text" id="cfg-colorText" value="#e5e7eb"/></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Dynamic Variables (Agency Info)</h3></div>
+        <div id="dynamicVarsContainer"></div>
+        <button class="btn btn-ghost" style="margin-top:8px" onclick="addDynamicVar()">+ Add Variable</button>
+      </div>
+    </div>
+
+    <!-- PERSONALITY PANEL -->
+    <div id="panel-personality" class="panel">
+      <div class="panel-header">
+        <h2>Agent Personality & Prompting</h2>
+        <p>Define how your agent communicates and what it knows</p>
+      </div>
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-header"><h3>Communication Style</h3></div>
+          <div class="form-group">
+            <label>Writing Style</label>
+            <select id="cfg-writingStyle">
+              <option value="professional">Professional</option>
+              <option value="friendly">Friendly</option>
+              <option value="casual">Casual</option>
+              <option value="formal">Formal</option>
+              <option value="technical">Technical</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Tone of Voice</label>
+            <select id="cfg-tone">
+              <option value="warm">Warm</option>
+              <option value="neutral">Neutral</option>
+              <option value="authoritative">Authoritative</option>
+              <option value="empathetic">Empathetic</option>
+              <option value="direct">Direct</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Max Response Words</label>
+            <input type="number" id="cfg-maxWords" value="40" min="10" max="500"/>
+          </div>
+          <div class="form-group">
+            <label>Language</label>
+            <select id="cfg-language">
+              <option value="fr">French</option>
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="de">German</option>
+            </select>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Knowledge Base</h3></div>
+          <div class="form-group">
+            <label>Knowledge Base URLs (one per line)</label>
+            <textarea id="cfg-knowledgeUrls" placeholder="https://www.example.com/faq&#10;https://www.example.com/about"></textarea>
+          </div>
+          <div class="form-group">
+            <label>System Prompt Modifiers (one per line)</label>
+            <textarea id="cfg-promptModifiers" placeholder="Always mention our free estimate service&#10;Never discuss competitor pricing"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CRM ENGINE PANEL -->
+    <div id="panel-crm" class="panel">
+      <div class="panel-header">
+        <h2>CRM Command Center</h2>
+        <p>Configure CRM sync behavior, field mappings, and push policies</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Provider Selection</h3>
+          <div style="display:flex;gap:8px;align-items:center"><button class="btn btn-ghost" onclick="testCrmConnection()">Test Connection</button><span class="tag" id="crmStatusTag">--</span></div>
+        </div>
+        <div id="crmTestResult" style="margin-bottom:12px"></div>
+        <div class="form-group">
+          <label>CRM Provider</label>
+          <select id="cfg-crmProvider" onchange="toggleCrmSections()">
+            <option value="none">None (Disabled)</option>
+            <option value="twenty">Twenty CRM</option>
+            <option value="airtable">Airtable</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="crmConfigSection" style="display:none">
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-header"><h3>Push Policy</h3></div>
+            <div class="form-group">
+              <label>Minimum Push Score (0-100)</label>
+              <input type="range" id="cfg-minPushScore" min="0" max="100" value="60" oninput="document.getElementById('scoreLabel').textContent=this.value"/>
+              <div class="range-label"><span>0 (push all)</span><span id="scoreLabel">60</span><span>100 (perfect only)</span></div>
+            </div>
+            <div class="form-group">
+              <label>Identity Key</label>
+              <select id="cfg-identityKey">
+                <option value="phone">Phone</option>
+                <option value="email">Email</option>
+                <option value="externalid">External ID</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Duplicate Strategy</label>
+              <select id="cfg-duplicateStrategy">
+                <option value="update">Update (Upsert)</option>
+                <option value="skip">Skip (Ignore)</option>
+                <option value="create_always">Always Create</option>
+                <option value="fail">Fail (Error)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Min Messages Before Push</label>
+              <input type="number" id="cfg-minMessages" value="3" min="1" max="50"/>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Strict Mode</h3></div>
+            <div class="form-group" style="display:flex;align-items:center;gap:10px">
+              <label class="toggle"><input type="checkbox" id="cfg-strictRequireId" checked/><span class="slider"></span></label>
+              <span style="font-size:13px">Require Record ID on push</span>
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:10px">
+              <label class="toggle"><input type="checkbox" id="cfg-strictVerifyWrite" checked/><span class="slider"></span></label>
+              <span style="font-size:13px">Read-After-Write Verification</span>
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:10px">
+              <label class="toggle"><input type="checkbox" id="cfg-strictCustomFields"/><span class="slider"></span></label>
+              <span style="font-size:13px">Strict Custom Fields Enforcement</span>
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:10px">
+              <label class="toggle"><input type="checkbox" id="cfg-fallbackBase" checked/><span class="slider"></span></label>
+              <span style="font-size:13px">Fallback to Base Fields</span>
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:10px">
+              <label class="toggle"><input type="checkbox" id="cfg-blockIncomplete"/><span class="slider"></span></label>
+              <span style="font-size:13px">Block if Incomplete</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Field Mapping Visualization</h3></div>
+          <table class="mapping-table" id="fieldMappingTable">
+            <thead><tr><th>Extracted JSON Field</th><th></th><th>CRM Field</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-header"><h3>Retry & Timing</h3></div>
+            <div class="form-group"><label>Max Retries</label><input type="number" id="cfg-maxRetries" value="3" min="0" max="10"/></div>
+            <div class="form-group"><label>Retry Delay (ms)</label><input type="number" id="cfg-retryDelay" value="1000" min="100" max="30000"/></div>
+            <div class="form-group"><label>Timeout (ms)</label><input type="number" id="cfg-timeout" value="10000" min="1000" max="60000"/></div>
+            <div class="form-group"><label>Push Delay (ms)</label><input type="number" id="cfg-pushDelay" value="500" min="0" max="5000"/></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Logging & Observability</h3></div>
+            <div class="form-group">
+              <label>Log Level</label>
+              <select id="cfg-logLevel">
+                <option value="debug">Debug</option>
+                <option value="info" selected>Info</option>
+                <option value="warn">Warn</option>
+                <option value="error">Error</option>
+                <option value="silent">Silent</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:10px">
+              <label class="toggle"><input type="checkbox" id="cfg-hashPii" checked/><span class="slider"></span></label>
+              <span style="font-size:13px">Hash PII in Logs</span>
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:10px">
+              <label class="toggle"><input type="checkbox" id="cfg-structuredLogs" checked/><span class="slider"></span></label>
+              <span style="font-size:13px">Structured JSON Logs</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LLM PROVIDER PANEL -->
+    <div id="panel-llm" class="panel">
+      <div class="panel-header">
+        <h2>LLM Provider Configuration</h2>
+        <p>Configure language model provider, keys, and parameters</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3>Provider Selection</h3>
+          <button class="btn btn-ghost" onclick="testLlmConnection()">Test Connection</button>
+        </div>
+        <div id="llmTestResult" style="margin-bottom:12px"></div>
+        <div class="form-group">
+          <label>LLM Provider</label>
+          <select id="cfg-llmProvider" onchange="toggleLlmSections()">
+            <option value="groq">Groq</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="custom">Custom (OpenAI-compatible)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Model Override (optional)</label><input type="text" id="cfg-llmModel" placeholder="Leave blank for provider default"/></div>
+        <div class="form-group"><label>Base URL Override (optional)</label><input type="url" id="cfg-llmBaseUrl" placeholder="Leave blank for provider default"/></div>
+        <div class="card-grid">
+          <div class="form-group"><label>Timeout (ms)</label><input type="number" id="cfg-llmTimeout" value="30000" min="1000" max="120000"/></div>
+          <div class="form-group"><label>Max Retries</label><input type="number" id="cfg-llmRetries" value="2" min="0" max="10"/></div>
+          <div class="form-group"><label>Max Tokens</label><input type="number" id="cfg-llmMaxTokens" value="700" min="50" max="8000"/></div>
+        </div>
+      </div>
+
+      <div id="llmGroqSection" class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Groq Configuration</h3></div>
+        <div class="form-group"><label>Model</label><input type="text" id="cfg-groqModel" value="llama-3.3-70b-versatile"/></div>
+        <div class="form-group">
+          <label>API Keys (lecture seule — masquees pour securite)</label>
+          <textarea id="cfg-groqKeys" placeholder="gsk_..." style="min-height:80px;opacity:0.6" readonly></textarea>
+          <p class="helper-text">&#128274; Ces cles sont masquees. Pour les modifier, allez dans <b>API Secrets</b> dans le menu a gauche.</p>
+        </div>
+        <div class="form-group"><label>Max Tokens (Normal)</label><input type="number" id="cfg-groqMaxNormal" value="700"/></div>
+        <div class="form-group"><label>Max Tokens (Short)</label><input type="number" id="cfg-groqMaxShort" value="300"/></div>
+        <div class="form-group"><label>Key Cooldown (ms)</label><input type="number" id="cfg-groqCooldown" value="15000"/></div>
+      </div>
+
+      <div id="llmOpenrouterSection" class="card" style="margin-top:16px;display:none">
+        <div class="card-header"><h3>OpenRouter Configuration</h3></div>
+        <div class="form-group">
+          <label>API Key (lecture seule — masquee pour securite)</label>
+          <input type="password" id="cfg-orApiKey" placeholder="sk-or-..." autocomplete="off" readonly style="opacity:0.6"/>
+          <p class="helper-text">&#128274; Cle masquee. Pour la modifier, allez dans <b>API Secrets</b> dans le menu a gauche.</p>
+        </div>
+        <div class="form-group"><label>Base URL</label><input type="url" id="cfg-orBaseUrl" value="https://openrouter.ai/api/v1"/></div>
+        <div class="form-group"><label>App Name</label><input type="text" id="cfg-orAppName" value="OracleSentinel"/></div>
+        <div class="form-group"><label>Max Tokens (Normal)</label><input type="number" id="cfg-orMaxNormal" value="600"/></div>
+        <div class="form-group"><label>Max Tokens (Short)</label><input type="number" id="cfg-orMaxShort" value="300"/></div>
+        <div class="form-group"><label>History Max Messages</label><input type="number" id="cfg-orHistoryMax" value="10"/></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>RAG Configuration</h3></div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px">
+          <label class="toggle"><input type="checkbox" id="cfg-ragEnabled" checked/><span class="slider"></span></label>
+          <span style="font-size:13px">RAG Enabled</span>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px">
+          <label class="toggle"><input type="checkbox" id="cfg-ragForceIntent"/><span class="slider"></span></label>
+          <span style="font-size:13px">Force Lookup on Intent Detection</span>
+        </div>
+        <div class="form-group">
+          <label>Min Confidence (0.0 - 1.0)</label>
+          <input type="number" id="cfg-ragMinConf" value="0.3" min="0" max="1" step="0.05"/>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px">
+          <label class="toggle"><input type="checkbox" id="cfg-knowledgeXml" checked/><span class="slider"></span></label>
+          <span style="font-size:13px">XML Knowledge Ingestion</span>
+        </div>
+        <div class="form-group"><label>XML Max Size (MB)</label><input type="number" id="cfg-xmlMaxSize" value="20" min="1" max="100"/></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Factory Build Controls</h3></div>
+        <div class="section-explain">
+          <b>Mode Strict :</b> Quand il est active, TOUS les avertissements deviennent bloquants.
+          Le build ne passera que si tout est parfait (2+ cles Groq, champs custom CRM enforces, etc.).
+          <br/><b>Conseil :</b> Desactivez-le pendant la configuration initiale. Activez-le une fois tout en ordre pour la production.
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px">
+          <label class="toggle"><input type="checkbox" id="cfg-buildStrict" checked/><span class="slider"></span></label>
+          <span style="font-size:13px">Mode Strict (bloque sur tout avertissement)</span>
+        </div>
+        <div class="form-group">
+          <label>Mode Embed</label>
+          <select id="cfg-embedMode">
+            <option value="hosted">Hosted (iframe)</option>
+            <option value="bundle">Bundle (JS autonome)</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px">
+          <label class="toggle"><input type="checkbox" id="cfg-agentApiKeyReq"/><span class="slider"></span></label>
+          <span style="font-size:13px">Exiger une cle API pour l'acces Agent</span>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px">
+          <label class="toggle"><input type="checkbox" id="cfg-killSwitch"/><span class="slider"></span></label>
+          <span style="font-size:13px;color:var(--danger)">&#9888; KILL SWITCH (desactive toutes les reponses de l'agent)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- KNOWLEDGE / XML PANEL -->
+    <div id="panel-knowledge" class="panel">
+      <div class="panel-header">
+        <h2>Knowledge Base &amp; XML Catalog</h2>
+        <p>Upload XML property catalog for RAG-powered answers</p>
+      </div>
+      <div class="card-grid">
+        <div class="stat-card" id="statPropertyCount"><div class="label">Properties in Catalog</div><div class="value" id="knowledgeCount">--</div><div class="sub" id="knowledgeLastImport">Loading...</div></div>
+        <div class="stat-card"><div class="label">XML Ingestion</div><div class="value" id="knowledgeXmlStatus">--</div><div class="sub" id="knowledgeXmlMaxSize">--</div></div>
+        <div class="stat-card" id="statTenantCount"><div class="label">Active Tenants</div><div class="value" id="tenantCountValue">--</div><div class="sub" id="tenantCountSub">Loading...</div></div>
+      </div>
+
+      <!-- TENANT MANAGEMENT CARD -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>&#128203; Gestion des Tenants</h3><button class="btn btn-ghost" onclick="refreshTenantList()">&#8635; Rafraichir</button></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Vue multi-tenant : tous les groupes avec leurs donnees en base. Chaque tenant correspond a une entree <code>WIDGET_TENANT_MAP</code>.</p>
+        <div id="tenantListContainer" style="overflow-x:auto">
+          <table class="mapping-table" id="tenantTable" style="width:100%">
+            <thead>
+              <tr>
+                <th>Tenant ID</th>
+                <th>Proprietes</th>
+                <th>Disponibles</th>
+                <th>Retirees</th>
+                <th>Dernier Import</th>
+                <th>Runs</th>
+                <th>Statut</th>
+                <th style="text-align:right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tenantTableBody">
+              <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px">Chargement des tenants...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="tenantDeleteResult" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Import XML Catalog</h3><button class="btn btn-ghost" onclick="refreshKnowledgeStatus()">Refresh Status</button></div>
+        <div class="form-group">
+          <label>XML File (.xml)</label>
+          <input type="file" id="xmlFile" accept=".xml,text/xml,application/xml" style="padding:8px"/>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-ghost" onclick="xmlImport('dry-run')">Dry-Run (Preview)</button>
+          <button class="btn btn-primary" onclick="xmlImport('commit')">Commit to Database</button>
+        </div>
+        <div id="xmlImportResult" style="margin-top:12px"></div>
+        <div class="log-viewer" id="xmlImportLog" style="margin-top:12px;max-height:250px;display:none"></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Knowledge URLs</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Managed in the Personality panel. These URLs are scraped for RAG context.</p>
+        <div id="knowledgeUrlsList" style="font-family:var(--font);font-size:12px;color:var(--text-muted)">--</div>
+      </div>
+    </div>
+
+    <!-- API SECRETS PANEL -->
+    <div id="panel-apis" class="panel">
+      <div class="panel-header">
+        <h2>Cles API &amp; Secrets</h2>
+        <p>Gerez vos identifiants sensibles ici. Les valeurs existantes ne sont jamais affichees.</p>
+      </div>
+      <div class="section-explain">
+        &#128274; <b>Comment ca marche :</b> Les champs vides = on garde la valeur actuelle.
+        Remplissez un champ UNIQUEMENT pour definir ou changer une cle.
+        Les secrets existants sont toujours preserves automatiquement lors du build.
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Twenty CRM</h3></div>
+        <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Only fill these if you need to SET or CHANGE the value. Empty = keep current.</p>
+        <div class="form-group"><label>Twenty API URL</label><input type="url" id="secret-twentyApiUrl" placeholder="https://api.twenty.com/api" autocomplete="off"/></div>
+        <div class="form-group"><label>Twenty API Key</label><input type="password" id="secret-twentyApiKey" placeholder="Leave empty to keep current" autocomplete="off"/></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Airtable</h3></div>
+        <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Only fill these if you need to SET or CHANGE the value.</p>
+        <div class="form-group"><label>Airtable Webhook URL</label><input type="url" id="secret-airtableWebhookUrl" placeholder="Leave empty to keep current" autocomplete="off"/></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Groq LLM</h3></div>
+        <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">API keys are also editable in the LLM Provider panel. Changes here override.</p>
+        <div class="form-group"><label>Groq API Keys (one per line)</label><textarea id="secret-groqKeys" rows="3" placeholder="Leave empty to keep current" autocomplete="off"></textarea></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>OpenRouter</h3></div>
+        <div class="form-group"><label>OpenRouter API Key</label><input type="password" id="secret-orApiKey" placeholder="Leave empty to keep current" autocomplete="off"/></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Database</h3></div>
+        <div class="form-group"><label>Database URL</label><input type="password" id="secret-databaseUrl" placeholder="Leave empty to keep current" autocomplete="off"/></div>
+      </div>
+    </div>
+
+    <!-- WEBHOOKS PANEL -->
+    <div id="panel-webhooks" class="panel">
+      <div class="panel-header">
+        <h2>Webhooks & Ingestion</h2>
+        <p>Configure inbound webhook endpoints and signature verification</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3>CRM Webhooks</h3>
+          <button class="btn btn-ghost" onclick="testWebhook()">Test Endpoint</button>
+        </div>
+        <div id="webhookTestResult" style="margin-bottom:12px"></div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px">
+          <label class="toggle"><input type="checkbox" id="cfg-webhooksEnabled"/><span class="slider"></span></label>
+          <span style="font-size:13px">Enable Inbound Webhooks</span>
+        </div>
+        <div class="form-group"><label>Webhook Path</label><input type="text" id="cfg-webhookPath" value="/api/crm/webhook"/></div>
+        <div class="form-group"><label>Webhook Secret (signature verification)</label><input type="password" id="cfg-webhookSecret" placeholder="Enter secret..." autocomplete="off"/></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Database Connection</h3></div>
+        <button class="btn btn-ghost" onclick="testDatabase()">Test Connection</button>
+        <div id="dbTestResult" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- OBSERVABILITY PANEL -->
+    <div id="panel-observability" class="panel">
+      <div class="panel-header">
+        <h2>Observability Panel</h2>
+        <p>Real-time logs, push metrics, and system diagnostics</p>
+      </div>
+      <div class="card-grid-3" id="obsStats"></div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">
+          <h3>Live Logs</h3>
+          <div>
+            <select id="logLevelFilter" onchange="refreshLogs()" style="width:auto;display:inline-block">
+              <option value="">All Levels</option>
+              <option value="error">Errors</option>
+              <option value="warn">Warnings</option>
+              <option value="info">Info</option>
+              <option value="debug">Debug</option>
+            </select>
+            <button class="btn btn-ghost" onclick="refreshLogs()">Refresh</button>
+          </div>
+        </div>
+        <div class="log-viewer" id="logViewer">
+          <div class="log-entry"><span class="ts">--</span> <span class="msg">Loading logs...</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MATRIX PANEL -->
+    <div id="panel-matrix" class="panel">
+      <div class="panel-header">
+        <h2>Runtime Behavior Matrix</h2>
+        <p>Deterministic outcome definitions for every scenario</p>
+      </div>
+      <div class="card">
+        <table class="matrix-table" id="matrixTable">
+          <thead><tr><th>Scenario</th><th>Condition</th><th>Strict Mode</th><th>Permissive Mode</th><th>Outcome</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- BUILD & DEPLOY PANEL -->
+    <div id="panel-build" class="panel">
+      <div class="panel-header">
+        <h2>Build &amp; Deploy</h2>
+        <p>Sauvegardez votre configuration, validez les connexions, et deployez votre agent</p>
+      </div>
+
+      <!-- Build Result Banner (hidden by default, shown after build) -->
+      <div id="buildBanner" class="build-banner" style="display:none"></div>
+
+      <!-- Embed Code (shown on success) -->
+      <div id="embedResult" class="card" style="display:none;margin-bottom:16px;border-color:var(--success)">
+        <div class="card-header"><h3 style="color:var(--success)">&#127881; Code Embed Pret</h3></div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Copiez ce code et collez-le dans votre site web pour afficher le chatbot :</p>
+        <div class="embed-box">
+          <code id="embedCode"></code>
+          <button class="copy-btn" onclick="copyEmbed()">Copier</button>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:8px">Testez-le directement : <a id="embedLink" href="/embed" target="_blank" style="color:var(--accent)">Ouvrir le widget dans un nouvel onglet</a></p>
+      </div>
+
+      <!-- Readiness -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Verification de Production</h3>
+          <span class="tag" id="readinessTag">--</span>
+        </div>
+        <p class="helper-text" style="margin-bottom:8px">Ces checks valident que tout est configure correctement avant le deploy.</p>
+        <div id="readinessChecks"></div>
+        <div id="readinessFixes" style="display:none"></div>
+        <button class="btn btn-ghost" style="margin-top:12px" onclick="runReadiness()">Lancer les Checks</button>
+      </div>
+
+      <!-- Build Pipeline -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Pipeline de Build</h3></div>
+        <div class="section-explain">
+          <b>Processus :</b> 1) Sauvegarde votre config dans .env &rarr; 2) Valide schema, CRM, LLM &rarr; 3) Check de production &rarr; 4) Genere le widget embed.<br/>
+          Les secrets sont preserves automatiquement, meme si masques dans l'interface.
+        </div>
+        <div id="buildSteps">
+          <p style="color:var(--text-muted);font-size:13px">Cliquez sur &laquo; Construire l'Agent &raquo; pour lancer le pipeline complet.</p>
+        </div>
+        <div class="btn-group">
+          <button id="btnBuild" class="btn btn-primary btn-lg" onclick="startBuild()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Construire l'Agent
+          </button>
+          <button class="btn btn-ghost" onclick="runReadiness()">Valider seulement</button>
+          <button class="btn btn-ghost" onclick="rollbackConfig()" style="color:var(--warning)">&#8634; Rollback .env</button>
+        </div>
+      </div>
+
+      <!-- Build Audit Log -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>Journal du Build</h3></div>
+        <div class="log-viewer" id="buildLog" style="max-height:200px">
+          <div class="log-entry"><span class="ts">--</span> <span class="msg">Aucun build pour l'instant</span></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ====== Factory Dashboard JavaScript ======
+
+let currentConfig = null;
+const API = '/api/factory';
+
+// ── API Helper ──────────────────────────────────────────
+
+// Read a cookie value by name
+function getCookie(name) {
+  var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? match[2] : null;
+}
+
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+
+  // Add CSRF token for state-changing methods
+  const method = (opts.method || 'GET').toUpperCase();
+  if (['POST', 'PUT', 'DELETE'].includes(method)) {
+    const csrfToken = getCookie('csrf_token');
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    }
+  }
+
+  const res = await fetch(API + path, {
+    headers: headers,
+    ...opts,
+  });
+  const data = await res.json().catch(() => ({ error: 'Invalid response' }));
+  if (!res.ok) throw Object.assign(new Error(data?.error || 'Request failed'), { status: res.status, data });
+  return data;
+}
+
+async function adminApi(path, opts = {}) {
+  const res = await fetch('/api/admin' + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  const data = await res.json().catch(() => ({ error: 'Invalid response' }));
+  if (!res.ok) throw Object.assign(new Error(data?.error || 'Request failed'), { status: res.status, data });
+  return data;
+}
+
+// ── Auth ─────────────────────────────────────────────────
+
+async function checkAuth() {
+  try {
+    await adminApi('/status');
+    document.getElementById('loginView').style.display = 'none';
+    document.getElementById('mainShell').style.display = 'flex';
+    await init();
+  } catch {
+    document.getElementById('loginView').style.display = 'flex';
+    document.getElementById('mainShell').style.display = 'none';
+  }
+}
+
+document.getElementById('btnLogin').addEventListener('click', async () => {
+  const key = document.getElementById('loginKey').value;
+  try {
+    await adminApi('/session', { method: 'POST', body: JSON.stringify({ key }) });
+    document.getElementById('loginKey').value = '';
+    await checkAuth();
+  } catch {
+    alert('Invalid admin key');
+  }
+});
+
+document.getElementById('loginKey').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btnLogin').click();
+});
+
+// ── Navigation ──────────────────────────────────────────
+
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    const panelId = 'panel-' + item.dataset.panel;
+    document.getElementById(panelId).classList.add('active');
+
+    // Auto-refresh panels
+    if (item.dataset.panel === 'overview') refreshOverview();
+    if (item.dataset.panel === 'observability') refreshObservability();
+    if (item.dataset.panel === 'matrix') loadMatrix();
+    if (item.dataset.panel === 'knowledge') { refreshKnowledgeStatus(); refreshTenantList(); }
+  });
+});
+
+// ── Initialize ──────────────────────────────────────────
+
+async function init() {
+  try {
+    const data = await api('/config');
+    currentConfig = data.config;
+    populateUI(currentConfig);
+    refreshOverview();
+  } catch (err) {
+    console.error('Init failed:', err);
+  }
+}
+
+function populateUI(c) {
+  // Identity
+  setValue('cfg-agentName', c.branding?.agentName);
+  setValue('cfg-agencyName', c.branding?.agencyName);
+  setValue('cfg-logoUrl', c.branding?.logoUrl);
+  setValue('cfg-avatarUrl', c.branding?.avatarUrl);
+  setValue('cfg-colorPrimary', c.branding?.themeColors?.primary);
+  setValue('cfg-colorSecondary', c.branding?.themeColors?.secondary);
+  setValue('cfg-colorAccent', c.branding?.themeColors?.accent);
+  setValue('cfg-colorBg', c.branding?.themeColors?.background);
+  setValue('cfg-colorSurface', c.branding?.themeColors?.surface);
+  setValue('cfg-colorText', c.branding?.themeColors?.text);
+
+  // Personality
+  setValue('cfg-writingStyle', c.personality?.writingStyle);
+  setValue('cfg-tone', c.personality?.toneOfVoice);
+  setValue('cfg-maxWords', c.personality?.maxResponseWords);
+  setValue('cfg-language', c.personality?.language);
+  setValue('cfg-knowledgeUrls', (c.knowledge?.urls || []).join('\\n'));
+  setValue('cfg-promptModifiers', (c.personality?.systemPromptModifiers || []).join('\\n'));
+
+  // CRM
+  setValue('cfg-crmProvider', c.crm?.provider);
+  setValue('cfg-minPushScore', c.crm?.minPushScore);
+  document.getElementById('scoreLabel').textContent = c.crm?.minPushScore || '60';
+  setValue('cfg-identityKey', c.crm?.identityKey);
+  setValue('cfg-duplicateStrategy', c.crm?.duplicateStrategy);
+  setValue('cfg-minMessages', c.crm?.minMessagesBeforePush);
+  setChecked('cfg-strictRequireId', c.crm?.strict?.requireId);
+  setChecked('cfg-strictVerifyWrite', c.crm?.strict?.verifyWrite);
+  setChecked('cfg-strictCustomFields', c.crm?.strict?.customFields);
+  setChecked('cfg-fallbackBase', c.crm?.fallbackBaseFields);
+  setChecked('cfg-blockIncomplete', c.crm?.blockIfIncomplete);
+  setValue('cfg-maxRetries', c.crm?.retry?.maxRetries);
+  setValue('cfg-retryDelay', c.crm?.retry?.delayMs);
+  setValue('cfg-timeout', c.crm?.retry?.timeoutMs);
+  setValue('cfg-pushDelay', c.crm?.pushDelayMs);
+  setValue('cfg-logLevel', c.crm?.logLevel);
+  setChecked('cfg-hashPii', c.crm?.hashPiiInLogs);
+  setChecked('cfg-structuredLogs', c.crm?.structuredLogs);
+
+  // LLM
+  setValue('cfg-llmProvider', c.llm?.provider);
+  setValue('cfg-llmModel', c.llm?.model);
+  setValue('cfg-llmBaseUrl', c.llm?.baseUrl);
+  setValue('cfg-llmTimeout', c.llm?.timeoutMs);
+  setValue('cfg-llmRetries', c.llm?.maxRetries);
+  setValue('cfg-llmMaxTokens', c.llm?.maxTokens);
+  setValue('cfg-groqModel', c.llm?.groq?.model);
+  setValue('cfg-groqKeys', (c.llm?.groq?.apiKeys || []).join('\\n'));
+  setValue('cfg-groqMaxNormal', c.llm?.groq?.maxTokensNormal);
+  setValue('cfg-groqMaxShort', c.llm?.groq?.maxTokensShort);
+  setValue('cfg-groqCooldown', c.llm?.groq?.keyCooldownMs);
+  setValue('cfg-orApiKey', c.llm?.openrouter?.apiKey);
+  setValue('cfg-orBaseUrl', c.llm?.openrouter?.baseUrl);
+  setValue('cfg-orAppName', c.llm?.openrouter?.appName);
+  setValue('cfg-orMaxNormal', c.llm?.openrouter?.maxTokensNormal);
+  setValue('cfg-orMaxShort', c.llm?.openrouter?.maxTokensShort);
+  setValue('cfg-orHistoryMax', c.llm?.openrouter?.historyMaxMessages);
+  toggleLlmSections();
+
+  // RAG
+  setChecked('cfg-ragEnabled', c.rag?.enabled !== false);
+  setChecked('cfg-ragForceIntent', c.rag?.forceLookupOnIntent);
+  setValue('cfg-ragMinConf', c.rag?.minConfidence);
+  setChecked('cfg-knowledgeXml', c.knowledge?.xmlEnabled !== false);
+  setValue('cfg-xmlMaxSize', c.knowledge?.xmlMaxSizeMb);
+
+  // API Secrets panel: NEVER populate with redacted values — leave placeholders
+  // These fields start empty on purpose.
+
+  // Factory
+  setChecked('cfg-buildStrict', c.factory?.buildStrict !== false);
+  setValue('cfg-embedMode', c.factory?.embedMode);
+  setChecked('cfg-agentApiKeyReq', c.factory?.agentApiKeyRequired);
+  setChecked('cfg-killSwitch', c.factory?.agentKillSwitch);
+
+  // Webhooks
+  setChecked('cfg-webhooksEnabled', c.crm?.webhooksEnabled);
+  setValue('cfg-webhookSecret', c.crm?.webhookSecret);
+
+  toggleCrmSections();
+  renderFieldMappings(c);
+  renderDynamicVars(c.variables || {});
+}
+
+function setValue(id, val) {
+  const el = document.getElementById(id);
+  if (el && val !== undefined && val !== null) el.value = val;
+}
+function setChecked(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.checked = !!val;
+}
+
+// ── Collect Config from UI ──────────────────────────────
+
+function collectConfig() {
+  const c = JSON.parse(JSON.stringify(currentConfig));
+
+  c.branding.agentName = document.getElementById('cfg-agentName').value;
+  c.branding.agencyName = document.getElementById('cfg-agencyName').value;
+  c.branding.logoUrl = document.getElementById('cfg-logoUrl').value;
+  c.branding.avatarUrl = document.getElementById('cfg-avatarUrl').value;
+  c.branding.themeColors.primary = document.getElementById('cfg-colorPrimary').value;
+  c.branding.themeColors.secondary = document.getElementById('cfg-colorSecondary').value;
+  c.branding.themeColors.accent = document.getElementById('cfg-colorAccent').value;
+  c.branding.themeColors.background = document.getElementById('cfg-colorBg').value;
+  c.branding.themeColors.surface = document.getElementById('cfg-colorSurface').value;
+  c.branding.themeColors.text = document.getElementById('cfg-colorText').value;
+
+  c.personality.writingStyle = document.getElementById('cfg-writingStyle').value;
+  c.personality.toneOfVoice = document.getElementById('cfg-tone').value;
+  c.personality.maxResponseWords = parseInt(document.getElementById('cfg-maxWords').value) || 40;
+  c.personality.language = document.getElementById('cfg-language').value;
+  c.knowledge.urls = document.getElementById('cfg-knowledgeUrls').value.split('\\n').filter(Boolean);
+  c.personality.knowledgeBaseUrls = c.knowledge.urls;
+  c.personality.systemPromptModifiers = document.getElementById('cfg-promptModifiers').value.split('\\n').filter(Boolean);
+
+  c.crm.provider = document.getElementById('cfg-crmProvider').value;
+  c.crm.enabled = c.crm.provider !== 'none';
+  c.crm.minPushScore = parseInt(document.getElementById('cfg-minPushScore').value) || 60;
+  c.crm.identityKey = document.getElementById('cfg-identityKey').value;
+  c.crm.duplicateStrategy = document.getElementById('cfg-duplicateStrategy').value;
+  c.crm.minMessagesBeforePush = parseInt(document.getElementById('cfg-minMessages').value) || 3;
+  c.crm.strict.requireId = document.getElementById('cfg-strictRequireId').checked;
+  c.crm.strict.verifyWrite = document.getElementById('cfg-strictVerifyWrite').checked;
+  c.crm.strict.customFields = document.getElementById('cfg-strictCustomFields').checked;
+  c.crm.fallbackBaseFields = document.getElementById('cfg-fallbackBase').checked;
+  c.crm.blockIfIncomplete = document.getElementById('cfg-blockIncomplete').checked;
+  c.crm.retry.maxRetries = parseInt(document.getElementById('cfg-maxRetries').value) || 3;
+  c.crm.retry.delayMs = parseInt(document.getElementById('cfg-retryDelay').value) || 1000;
+  c.crm.retry.timeoutMs = parseInt(document.getElementById('cfg-timeout').value) || 10000;
+  c.crm.pushDelayMs = parseInt(document.getElementById('cfg-pushDelay').value) || 500;
+  c.crm.logLevel = document.getElementById('cfg-logLevel').value;
+  c.crm.hashPiiInLogs = document.getElementById('cfg-hashPii').checked;
+  c.crm.structuredLogs = document.getElementById('cfg-structuredLogs').checked;
+  c.crm.errorMode = c.crm.strict.requireId ? 'strict' : 'permissive';
+
+  // LLM
+  c.llm.provider = document.getElementById('cfg-llmProvider').value;
+  c.llm.model = document.getElementById('cfg-llmModel').value || '';
+  c.llm.baseUrl = document.getElementById('cfg-llmBaseUrl').value || '';
+  c.llm.timeoutMs = parseInt(document.getElementById('cfg-llmTimeout').value) || 30000;
+  c.llm.maxRetries = parseInt(document.getElementById('cfg-llmRetries').value) || 2;
+  c.llm.maxTokens = parseInt(document.getElementById('cfg-llmMaxTokens').value) || 700;
+
+  if (!c.llm.groq) c.llm.groq = {};
+  c.llm.groq.model = document.getElementById('cfg-groqModel').value;
+  // Groq keys: prefer API Secrets panel, fallback to LLM panel
+  const secretGroqKeysRaw = document.getElementById('secret-groqKeys').value.trim();
+  const llmGroqKeysRaw = document.getElementById('cfg-groqKeys').value;
+  if (secretGroqKeysRaw) {
+    // Operator explicitly set new keys in API Secrets panel
+    c.llm.groq.apiKeys = secretGroqKeysRaw.split('\\n').filter(Boolean);
+  } else if (llmGroqKeysRaw && !llmGroqKeysRaw.includes('...')) {
+    c.llm.groq.apiKeys = llmGroqKeysRaw.split('\\n').filter(Boolean);
+  }
+  // else: keep whatever was in currentConfig (may be redacted — saveConfig will preserve real value)
+  c.llm.groq.maxTokensNormal = parseInt(document.getElementById('cfg-groqMaxNormal').value) || 700;
+  c.llm.groq.maxTokensShort = parseInt(document.getElementById('cfg-groqMaxShort').value) || 300;
+  c.llm.groq.keyCooldownMs = parseInt(document.getElementById('cfg-groqCooldown').value) || 15000;
+
+  if (!c.llm.openrouter) c.llm.openrouter = {};
+  // OpenRouter key: prefer API Secrets panel
+  const secretOrKey = document.getElementById('secret-orApiKey').value.trim();
+  const orKeyRaw = document.getElementById('cfg-orApiKey').value;
+  if (secretOrKey) {
+    c.llm.openrouter.apiKey = secretOrKey;
+  } else if (orKeyRaw && !orKeyRaw.includes('...')) {
+    c.llm.openrouter.apiKey = orKeyRaw;
+  }
+  c.llm.openrouter.baseUrl = document.getElementById('cfg-orBaseUrl').value;
+  c.llm.openrouter.appName = document.getElementById('cfg-orAppName').value;
+  c.llm.openrouter.maxTokensNormal = parseInt(document.getElementById('cfg-orMaxNormal').value) || 600;
+  c.llm.openrouter.maxTokensShort = parseInt(document.getElementById('cfg-orMaxShort').value) || 300;
+  c.llm.openrouter.historyMaxMessages = parseInt(document.getElementById('cfg-orHistoryMax').value) || 10;
+
+  // RAG
+  if (!c.rag) c.rag = {};
+  c.rag.enabled = document.getElementById('cfg-ragEnabled').checked;
+  c.rag.forceLookupOnIntent = document.getElementById('cfg-ragForceIntent').checked;
+  c.rag.minConfidence = parseFloat(document.getElementById('cfg-ragMinConf').value) || 0.3;
+  c.knowledge.xmlEnabled = document.getElementById('cfg-knowledgeXml').checked;
+  c.knowledge.xmlMaxSizeMb = parseInt(document.getElementById('cfg-xmlMaxSize').value) || 20;
+
+  // Twenty secrets from API Secrets panel
+  if (!c.crm.twenty) c.crm.twenty = {};
+  const secretTwentyUrl = document.getElementById('secret-twentyApiUrl').value.trim();
+  const secretTwentyKey = document.getElementById('secret-twentyApiKey').value.trim();
+  if (secretTwentyUrl) c.crm.twenty.apiUrl = secretTwentyUrl;
+  if (secretTwentyKey) c.crm.twenty.apiKey = secretTwentyKey;
+
+  // Airtable secrets from API Secrets panel
+  if (!c.crm.airtable) c.crm.airtable = {};
+  const secretAirtableUrl = document.getElementById('secret-airtableWebhookUrl').value.trim();
+  if (secretAirtableUrl) c.crm.airtable.webhookUrl = secretAirtableUrl;
+
+  // Database URL from API Secrets panel
+  const secretDbUrl = document.getElementById('secret-databaseUrl').value.trim();
+  if (secretDbUrl) c.server.databaseUrl = secretDbUrl;
+
+  // Factory
+  if (!c.factory) c.factory = {};
+  c.factory.buildStrict = document.getElementById('cfg-buildStrict').checked;
+  c.factory.embedMode = document.getElementById('cfg-embedMode').value;
+  c.factory.agentApiKeyRequired = document.getElementById('cfg-agentApiKeyReq').checked;
+  c.factory.agentKillSwitch = document.getElementById('cfg-killSwitch').checked;
+
+  // Collect dynamic vars
+  const vars = {};
+  document.querySelectorAll('.dyn-var-row').forEach(row => {
+    const key = row.querySelector('.dyn-key').value.trim();
+    const val = row.querySelector('.dyn-val').value;
+    if (key) vars[key] = val;
+  });
+  c.variables = vars;
+
+  c.updatedAt = new Date().toISOString();
+
+  return c;
+}
+
+// ── CRM Section Toggle ──────────────────────────────────
+
+function toggleCrmSections() {
+  const provider = document.getElementById('cfg-crmProvider').value;
+  const section = document.getElementById('crmConfigSection');
+  section.style.display = provider === 'none' ? 'none' : 'block';
+
+  const tag = document.getElementById('crmStatusTag');
+  if (provider === 'none') {
+    tag.className = 'tag tag-warning';
+    tag.textContent = 'DISABLED';
+  } else {
+    tag.className = 'tag tag-success';
+    tag.textContent = provider.toUpperCase();
+  }
+}
+
+// ── LLM Section Toggle ───────────────────────────────────
+
+function toggleLlmSections() {
+  const provider = document.getElementById('cfg-llmProvider').value;
+  document.getElementById('llmGroqSection').style.display = provider === 'groq' ? 'block' : 'none';
+  document.getElementById('llmOpenrouterSection').style.display = provider === 'openrouter' ? 'block' : 'none';
+}
+
+// ── Test Connection Functions ────────────────────────────
+
+function renderTestResult(containerId, data) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (data.success) {
+    el.innerHTML = '<span class="tag tag-success">CONNECTED</span> <span style="font-size:12px;color:var(--text-muted)">' + escHtml(data.model || data.message || 'OK') + '</span>';
+  } else {
+    el.innerHTML = '<span class="tag tag-danger">FAILED</span> <span style="font-size:12px;color:var(--danger)">' + escHtml(data.error || 'Unknown error') + '</span>';
+  }
+}
+
+async function testLlmConnection() {
+  document.getElementById('llmTestResult').innerHTML = '<span class="spinner"></span> Testing...';
+  try {
+    const data = await api('/test/llm', { method: 'POST' });
+    renderTestResult('llmTestResult', data);
+  } catch (err) {
+    renderTestResult('llmTestResult', { success: false, error: err.message });
+  }
+}
+
+async function testCrmConnection() {
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api('/test/crm', { method: 'POST' });
+    renderTestResult('crmTestResult', data);
+  } catch (err) {
+    renderTestResult('crmTestResult', { success: false, error: err.message });
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── Knowledge / XML Functions ───────────────────────────
+
+async function refreshKnowledgeStatus() {
+  try {
+    const data = await api('/knowledge/status');
+    document.getElementById('knowledgeCount').textContent = data.propertyCount ?? '--';
+    const statCard = document.getElementById('statPropertyCount');
+    if (statCard) statCard.className = 'stat-card ' + (data.propertyCount > 0 ? 'success' : 'warning');
+    document.getElementById('knowledgeLastImport').textContent = data.lastImportAt ? 'Last import: ' + new Date(data.lastImportAt).toLocaleString() + (data.lastErrorCount > 0 ? ' (' + data.lastErrorCount + ' errors)' : '') : 'No imports yet';
+    document.getElementById('knowledgeXmlStatus').textContent = data.xmlEnabled ? 'ENABLED' : 'DISABLED';
+    document.getElementById('knowledgeXmlMaxSize').textContent = 'Max size: ' + (data.xmlMaxSizeMb || 20) + ' MB';
+    // Show knowledge URLs
+    const urls = currentConfig?.knowledge?.urls || [];
+    document.getElementById('knowledgeUrlsList').textContent = urls.length > 0 ? urls.join(', ') : 'No URLs configured';
+  } catch (err) {
+    document.getElementById('knowledgeCount').textContent = 'ERR';
+    document.getElementById('knowledgeLastImport').textContent = err.message;
+  }
+}
+
+// ── Tenant Management ────────────────────────────────────
+
+async function refreshTenantList() {
+  var tbody = document.getElementById('tenantTableBody');
+  var deleteResult = document.getElementById('tenantDeleteResult');
+  if (deleteResult) deleteResult.innerHTML = '';
+  try {
+    var data = await api('/knowledge/tenants');
+
+    // Update stat card
+    document.getElementById('tenantCountValue').textContent = data.totalTenants || 0;
+    var statCard = document.getElementById('statTenantCount');
+    if (statCard) statCard.className = 'stat-card ' + (data.totalTenants > 0 ? 'success' : 'warning');
+    document.getElementById('tenantCountSub').textContent = data.totalTenants > 0
+      ? Object.keys(data.widgetTenantMap || {}).length + ' widget(s) mapped'
+      : 'Aucun tenant en base';
+
+    if (!data.tenants || data.tenants.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px">Aucun tenant trouve. Importez un XML depuis le panneau ci-dessous.</td></tr>';
+      return;
+    }
+
+    // Build the widget_id reverse map
+    var widgetMap = {};
+    if (data.widgetTenantMap) {
+      for (var wid in data.widgetTenantMap) {
+        var tid = data.widgetTenantMap[wid];
+        if (!widgetMap[tid]) widgetMap[tid] = [];
+        widgetMap[tid].push(wid);
+      }
+    }
+
+    tbody.innerHTML = data.tenants.map(function(t) {
+      var isConfigured = widgetMap[t.tenantId] && widgetMap[t.tenantId].length > 0;
+      var statusTag = t.propertyCount > 0
+        ? '<span class="tag tag-success">Actif</span>'
+        : (t.emptyTenant ? '<span class="tag tag-warning">Vide</span>' : '<span class="tag tag-info">Vide</span>');
+      if (isConfigured) statusTag += ' <span class="tag tag-info" title="Widget IDs: ' + escHtml(widgetMap[t.tenantId].join(', ')) + '">MAP</span>';
+
+      var lastImport = t.lastImportAt ? new Date(t.lastImportAt).toLocaleDateString('fr-FR') + ' ' + new Date(t.lastImportAt).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}) : '--';
+      if (t.lastImportErrors > 0) lastImport += ' <span style="color:var(--warning)">(' + t.lastImportErrors + ' err)</span>';
+
+      return '<tr>' +
+        '<td><strong>' + escHtml(t.tenantId) + '</strong></td>' +
+        '<td>' + t.propertyCount + '</td>' +
+        '<td style="color:var(--success)">' + t.availableCount + '</td>' +
+        '<td style="color:var(--text-muted)">' + t.retiredCount + '</td>' +
+        '<td style="font-size:11px">' + lastImport + '</td>' +
+        '<td>' + t.totalImportRuns + '</td>' +
+        '<td>' + statusTag + '</td>' +
+        '<td style="text-align:right"><button class="btn btn-danger" style="padding:4px 12px;font-size:11px" onclick="deleteTenant(\'' + escHtml(t.tenantId) + '\')">Supprimer</button></td>' +
+        '</tr>';
+    }).join('');
+
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">Erreur: ' + escHtml(err.message) + '</td></tr>';
+    document.getElementById('tenantCountValue').textContent = 'ERR';
+  }
+}
+
+async function deleteTenant(tenantId) {
+  if (!tenantId) return;
+  if (!confirm('ATTENTION : Supprimer le tenant "' + tenantId + '" ?\n\nCela supprimera TOUTES les donnees associees :\n- Proprietes du catalogue\n- Historique des imports\n- Conversations et messages\n- Leads\n\nCette action est IRREVERSIBLE.')) return;
+  if (!confirm('Confirmation finale : supprimer definitivement "' + tenantId + '" ?')) return;
+
+  var deleteResult = document.getElementById('tenantDeleteResult');
+  deleteResult.innerHTML = '<span class="spinner"></span> Suppression du tenant "' + escHtml(tenantId) + '" en cours...';
+
+  try {
+    var data = await api('/knowledge/tenants/' + encodeURIComponent(tenantId), { method: 'DELETE' });
+    deleteResult.innerHTML = '<span class="tag tag-success">SUPPRIME</span> ' +
+      '<span style="font-size:12px;color:var(--text-muted)">' +
+      data.propertiesDeleted + ' proprietes, ' +
+      data.runsDeleted + ' runs, ' +
+      data.conversationsDeleted + ' conversations, ' +
+      data.leadsDeleted + ' leads supprimes</span>' +
+      (data.hint ? '<div style="margin-top:8px;font-size:11px;color:var(--warning)">' + escHtml(data.hint) + '</div>' : '');
+
+    // Refresh both views
+    await refreshTenantList();
+    await refreshKnowledgeStatus();
+  } catch (err) {
+    deleteResult.innerHTML = '<span class="tag tag-danger">ERREUR</span> <span style="color:var(--danger);font-size:12px">' + escHtml(err.message) + '</span>';
+  }
+}
+
+// ── XML Import ────────────────────────────────────────────
+
+async function xmlImport(mode) {
+  const fileInput = document.getElementById('xmlFile');
+  const f = fileInput.files && fileInput.files[0];
+  if (!f) { alert('Select an XML file first'); return; }
+
+  const maxMb = currentConfig?.knowledge?.xmlMaxSizeMb || 20;
+  if (f.size > maxMb * 1024 * 1024) {
+    alert('File too large: ' + (f.size / 1024 / 1024).toFixed(1) + 'MB exceeds max ' + maxMb + 'MB');
+    return;
+  }
+
+  if (mode === 'commit' && !confirm('Commit XML to database? This will update/replace properties.')) return;
+
+  const resultDiv = document.getElementById('xmlImportResult');
+  const logDiv = document.getElementById('xmlImportLog');
+  resultDiv.innerHTML = '<span class="spinner"></span> Importing (' + mode + ')...';
+  logDiv.style.display = 'none';
+
+  try {
+    const xmlText = await f.text();
+    const res = await fetch(API + '/knowledge/import/' + mode, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/xml' },
+      body: xmlText,
+    });
+    const data = await res.json().catch(() => ({ error: 'Invalid response' }));
+    if (!res.ok) throw Object.assign(new Error(data?.error || 'Import failed'), { data });
+
+    const tag = data.errorCount === 0 ? 'tag-success' : 'tag-warning';
+    resultDiv.innerHTML = '<span class="tag ' + tag + '">' + mode.toUpperCase() + ' OK</span> ' +
+      '<span style="font-size:12px;color:var(--text-muted)">' + data.seenCount + ' properties seen, ' + data.errorCount + ' errors</span>';
+
+    if (data.errors && data.errors.length > 0) {
+      logDiv.style.display = 'block';
+      logDiv.innerHTML = data.errors.map(function(e) {
+        return '<div class="log-entry"><span class="level-warn">[WARN]</span> <span class="msg">' + escHtml(e.reason || e.id_unique || JSON.stringify(e)) + '</span></div>';
+      }).join('');
+    }
+
+    if (mode === 'commit') { await refreshKnowledgeStatus(); await refreshTenantList(); }
+  } catch (err) {
+    resultDiv.innerHTML = '<span class="tag tag-danger">FAILED</span> <span style="color:var(--danger);font-size:12px">' + escHtml(err.message) + '</span>';
+  }
+}
+
+async function testDatabase() {
+  document.getElementById('dbTestResult').innerHTML = '<span class="spinner"></span> Testing...';
+  try {
+    const data = await api('/test/database', { method: 'POST' });
+    renderTestResult('dbTestResult', data);
+  } catch (err) {
+    renderTestResult('dbTestResult', { success: false, error: err.message });
+  }
+}
+
+async function testWebhook() {
+  document.getElementById('webhookTestResult').innerHTML = '<span class="spinner"></span> Testing...';
+  const path = document.getElementById('cfg-webhookPath')?.value || '/api/crm/webhook';
+  const url = window.location.origin + path;
+  try {
+    const data = await api('/test/webhook', { method: 'POST', body: JSON.stringify({ url }) });
+    renderTestResult('webhookTestResult', data);
+  } catch (err) {
+    renderTestResult('webhookTestResult', { success: false, error: err.message });
+  }
+}
+
+// ── Field Mapping Visualization ─────────────────────────
+
+function renderFieldMappings(c) {
+  const tbody = document.querySelector('#fieldMappingTable tbody');
+  const mappings = [
+    { source: 'person.firstName', target: 'firstName / prenom', active: true },
+    { source: 'person.lastName', target: 'lastName / nom', active: true },
+    { source: 'person.phone', target: 'phone / numero_telephone', active: true },
+    { source: 'person.email', target: 'email', active: true },
+    { source: 'projectType', target: 'type', active: true },
+    { source: 'need', target: 'besoin', active: true },
+    { source: 'location', target: 'adresse', active: true },
+    { source: 'qualificationScore', target: 'qualification', active: true },
+    { source: 'summary', target: 'details', active: true },
+    { source: 'notes', target: 'notes', active: true },
+    { source: 'agentNote', target: 'impression_agent', active: c.crm?.includeAgentNote },
+    { source: 'appointmentDate', target: 'date_rdv', active: true },
+    { source: 'tags', target: 'tags', active: true },
+  ];
+
+  tbody.innerHTML = mappings.map(m => '<tr>' +
+    '<td style="font-family:var(--font);color:var(--accent)">' + m.source + '</td>' +
+    '<td class="arrow" style="text-align:center">&#8594;</td>' +
+    '<td style="font-family:var(--font)">' + m.target + '</td>' +
+    '<td>' + (m.active ? '<span class="tag tag-success">Active</span>' : '<span class="tag tag-warning">Disabled</span>') + '</td>' +
+  '</tr>').join('');
+}
+
+// ── Dynamic Variables ───────────────────────────────────
+
+function renderDynamicVars(vars) {
+  const container = document.getElementById('dynamicVarsContainer');
+  container.innerHTML = '';
+  for (const [key, val] of Object.entries(vars)) {
+    addDynamicVarRow(key, val);
+  }
+}
+
+function addDynamicVarRow(key = '', val = '') {
+  const container = document.getElementById('dynamicVarsContainer');
+  const row = document.createElement('div');
+  row.className = 'dyn-var-row';
+  row.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:center';
+  row.innerHTML = '<input class="dyn-key" type="text" value="' + escHtml(key) + '" placeholder="VAR_KEY" style="flex:1;max-width:200px"/>' +
+    '<input class="dyn-val" type="text" value="' + escHtml(val) + '" placeholder="Value" style="flex:2"/>' +
+    '<button class="btn btn-ghost" onclick="this.parentElement.remove()" style="padding:6px 10px;font-size:16px">&times;</button>';
+  container.appendChild(row);
+}
+
+function addDynamicVar() { addDynamicVarRow('VAR_', ''); }
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Overview ────────────────────────────────────────────
+
+// ── Rollback ────────────────────────────────────────────
+
+async function rollbackConfig() {
+  if (!confirm('Restore the last .env backup? Current .env will be overwritten.')) return;
+  try {
+    const data = await api('/rollback/latest', { method: 'POST' });
+    if (data.success) {
+      alert('Rollback succeeded. Config restored from backup.');
+      await init();
+    } else {
+      alert('Rollback failed: ' + (data.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Rollback error: ' + err.message);
+  }
+}
+
+async function refreshOverview() {
+  try {
+    const data = await api('/observability');
+
+    // Stats
+    const uptime = data.system?.uptime || 0;
+    const hrs = Math.floor(uptime / 3600);
+    const mins = Math.floor((uptime % 3600) / 60);
+    document.querySelector('#statUptime .value').textContent = hrs + 'h ' + mins + 'm';
+    document.querySelector('#statCrmPushes .value').textContent = data.crm?.totalPushes || '0';
+
+    const total = data.crm?.totalPushes || 0;
+    const success = data.crm?.successCount || 0;
+    const rate = total > 0 ? Math.round((success / total) * 100) : 100;
+    document.querySelector('#statSuccess .value').textContent = rate + '%';
+    document.getElementById('statSuccess').className = 'stat-card ' + (rate >= 90 ? 'success' : rate >= 70 ? 'warning' : 'danger');
+
+    // Health
+    const healthDiv = document.getElementById('healthChecks');
+    const checks = [
+      { name: 'Database', ok: data.system?.databaseConnected },
+      { name: 'CRM Connected', ok: data.system?.crmConnected },
+      { name: 'LLM Available', ok: data.system?.llmAvailable },
+      { name: 'Memory', ok: (data.system?.memoryUsageMb || 0) < 512, val: (data.system?.memoryUsageMb || 0) + ' MB' },
+    ];
+    healthDiv.innerHTML = checks.map(c =>
+      '<div class="check-item">' +
+        '<div class="check-dot ' + (c.ok ? 'pass' : 'fail') + '"></div>' +
+        '<div class="check-name">' + c.name + '</div>' +
+        '<div class="check-msg">' + (c.val || (c.ok ? 'OK' : 'Issue')) + '</div>' +
+      '</div>'
+    ).join('');
+
+    // Active Config Summary
+    if (currentConfig) {
+      const cfgDiv = document.getElementById('activeConfig');
+      cfgDiv.innerHTML = [
+        row('Agent', currentConfig.branding?.agentName),
+        row('Agency', currentConfig.branding?.agencyName),
+        row('CRM Provider', (currentConfig.crm?.provider || 'none').toUpperCase()),
+        row('LLM Provider', (currentConfig.llm?.provider || '-').toUpperCase()),
+        row('Min Push Score', currentConfig.crm?.minPushScore),
+        row('Identity Key', currentConfig.crm?.identityKey),
+        row('Strict Mode', currentConfig.crm?.strict?.requireId ? 'ON' : 'OFF'),
+        row('Language', currentConfig.personality?.language?.toUpperCase()),
+      ].join('');
+    }
+
+    // Status indicator
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    dot.className = 'status-dot ' + (data.system?.databaseConnected ? 'ok' : 'err');
+    txt.textContent = data.system?.databaseConnected ? 'System Online' : 'System Error';
+  } catch (err) {
+    console.error('Overview refresh failed:', err);
+  }
+}
+
+function row(label, value) {
+  return '<div class="check-item"><div class="check-name">' + label + '</div><div class="check-msg">' + (value || '-') + '</div></div>';
+}
+
+// ── Observability ───────────────────────────────────────
+
+async function refreshObservability() {
+  try {
+    const data = await api('/observability');
+    const stats = document.getElementById('obsStats');
+    stats.innerHTML = [
+      statCard('Pushes (24h)', data.crm?.totalPushes, 'Total CRM pushes'),
+      statCard('Successes', data.crm?.successCount, 'Successful pushes', 'success'),
+      statCard('Failures', data.crm?.failureCount, 'Failed pushes', data.crm?.failureCount > 0 ? 'danger' : ''),
+    ].join('');
+    await refreshLogs();
+  } catch (err) {
+    console.error('Observability refresh failed:', err);
+  }
+}
+
+function statCard(label, value, sub, cls) {
+  return '<div class="stat-card ' + (cls||'') + '"><div class="label">' + label + '</div><div class="value">' + (value||0) + '</div><div class="sub">' + sub + '</div></div>';
+}
+
+async function refreshLogs() {
+  try {
+    const level = document.getElementById('logLevelFilter')?.value || '';
+    const data = await api('/logs?limit=100' + (level ? '&level=' + level : ''));
+    const viewer = document.getElementById('logViewer');
+    if (!data.entries?.length) {
+      viewer.innerHTML = '<div class="log-entry"><span class="msg" style="color:var(--text-muted)">No logs yet</span></div>';
+      return;
+    }
+    viewer.innerHTML = data.entries.map(e =>
+      '<div class="log-entry">' +
+        '<span class="ts">' + (e.timestamp?.slice(11,19) || '') + '</span> ' +
+        '<span class="level-' + e.level + '">[' + (e.level||'').toUpperCase() + ']</span> ' +
+        '<span class="msg">' + escHtml(e.message || e.event || '') + '</span>' +
+      '</div>'
+    ).join('');
+  } catch { /* ignore */ }
+}
+
+// ── Matrix ──────────────────────────────────────────────
+
+async function loadMatrix() {
+  try {
+    const data = await api('/matrix');
+    const tbody = document.querySelector('#matrixTable tbody');
+    tbody.innerHTML = (data.scenarios || []).map(s => {
+      const cls = s.outcome === 'SUCCESS' ? 'tag-success' : s.outcome === 'WARNING' ? 'tag-warning' : 'tag-danger';
+      return '<tr>' +
+        '<td><strong>' + escHtml(s.scenario) + '</strong></td>' +
+        '<td style="font-size:11px">' + escHtml(s.condition) + '</td>' +
+        '<td style="font-size:11px">' + escHtml(s.strictBehavior) + '</td>' +
+        '<td style="font-size:11px">' + escHtml(s.permissiveBehavior) + '</td>' +
+        '<td><span class="tag ' + cls + '">' + s.outcome + '</span></td>' +
+      '</tr>';
+    }).join('');
+  } catch (err) {
+    console.error('Matrix load failed:', err);
+  }
+}
+
+// ── Readiness ───────────────────────────────────────────
+
+async function runReadiness() {
+  const tag = document.getElementById('readinessTag');
+  const div = document.getElementById('readinessChecks');
+  const fixDiv = document.getElementById('readinessFixes');
+  tag.textContent = 'VERIFICATION...';
+  tag.className = 'tag tag-info';
+
+  try {
+    const data = await api('/readiness');
+    const r = data.readiness;
+
+    const levelCls = r.level === 'READY' ? 'tag-success' : r.level === 'WARNING' ? 'tag-warning' : 'tag-danger';
+    const levelLabel = r.level === 'READY' ? 'PRET' : r.level === 'WARNING' ? 'AVERTISSEMENTS' : 'BLOQUE';
+    tag.textContent = levelLabel;
+    tag.className = 'tag ' + levelCls;
+
+    div.innerHTML = (r.checks || []).map(c => {
+      var statusLabel = c.status === 'pass' ? '&#10003;' : c.status === 'warn' ? '&#9888;' : '&#10007;';
+      return '<div class="check-item">' +
+        '<div class="check-dot ' + c.status + '"></div>' +
+        '<div class="check-name">' + escHtml(c.name) + '</div>' +
+        '<div class="check-msg">' + escHtml(c.message) + '</div>' +
+      '</div>';
+    }).join('');
+
+    // Show remediation hints if blocked
+    if (r.blockers && r.blockers.length > 0) {
+      var fixes = r.blockers.map(function(b) {
+        var fix = getRemediationHint(b);
+        return '<div class="fix-hint"><strong>&#9888; Bloqueur</strong><p>' + escHtml(b) + '</p>' +
+          (fix ? '<p style="margin-top:6px;color:var(--accent)"><b>Comment corriger :</b> ' + fix + '</p>' : '') +
+        '</div>';
+      }).join('');
+      fixDiv.innerHTML = fixes;
+      fixDiv.style.display = 'block';
+    } else {
+      fixDiv.style.display = 'none';
+    }
+  } catch (err) {
+    tag.textContent = 'ERREUR';
+    tag.className = 'tag tag-danger';
+    div.innerHTML = '<p style="color:var(--danger)">' + escHtml(err.message) + '</p>';
+  }
+}
+
+function getRemediationHint(blocker) {
+  var b = blocker.toLowerCase();
+  if (b.includes('groq api key') && b.includes('1'))
+    return 'Ajoutez une 2e cle Groq dans <b>API Secrets &gt; Groq LLM</b> (une par ligne). Ou desactivez le Mode Strict.';
+  if (b.includes('custom fields') && b.includes('not strictly'))
+    return 'Activez <b>Strict Custom Fields Enforcement</b> dans CRM Engine &gt; Strict Mode. Ou desactivez le Mode Strict dans Build Controls.';
+  if (b.includes('database'))
+    return 'Verifiez que PostgreSQL tourne et que DATABASE_URL est correct dans <b>API Secrets &gt; Database</b>.';
+  if (b.includes('api url') || b.includes('api key missing'))
+    return 'Remplissez les identifiants CRM dans <b>API Secrets</b>. Ou mettez CRM Provider sur "None".';
+  if (b.includes('kill switch'))
+    return 'Desactivez le Kill Switch dans <b>LLM Provider &gt; Factory Build Controls</b>.';
+  if (b.includes('agent name') || b.includes('agency name'))
+    return 'Remplissez le nom de l\'agent et de l\'agence dans <b>Identity</b>.';
+  if (b.includes('[strict]'))
+    return 'Cet avertissement est devenu bloquant a cause du <b>Mode Strict</b>. Corrigez-le ou desactivez le Mode Strict.';
+  return '';
+}
+
+// ── Build ───────────────────────────────────────────────
+
+async function startBuild() {
+  var btn = document.getElementById('btnBuild');
+  var banner = document.getElementById('buildBanner');
+  var embedResult = document.getElementById('embedResult');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Construction en cours...';
+  banner.style.display = 'none';
+  embedResult.style.display = 'none';
+
+  var stepsDiv = document.getElementById('buildSteps');
+  stepsDiv.innerHTML = '<div class="build-step"><div class="step-icon running"><span class="spinner" style="width:12px;height:12px;border-width:1.5px"></span></div><div class="step-name">Etape 1/2 : Sauvegarde de la configuration...</div></div>';
+
+  try {
+    // STEP 1: Save config to .env (this preserves real secrets automatically)
+    var config = collectConfig();
+    await api('/config', { method: 'PUT', body: JSON.stringify({ config: config }) });
+
+    stepsDiv.innerHTML = '<div class="build-step"><div class="step-icon success">&#10003;</div><div class="step-name">Configuration sauvegardee</div></div>' +
+      '<div class="build-step"><div class="step-icon running"><span class="spinner" style="width:12px;height:12px;border-width:1.5px"></span></div><div class="step-name">Etape 2/2 : Pipeline de build...</div></div>';
+
+    // STEP 2: Build using server-side config (reads real secrets from .env — no redacted values!)
+    var data = await api('/build', { method: 'POST', body: JSON.stringify({}) });
+    var build = data.build;
+
+    // Render steps
+    stepsDiv.innerHTML = (build.steps || []).map(function(s) {
+      var iconMap = { pending: '&#9711;', running: '&#8987;', success: '&#10003;', warning: '&#9888;', failure: '&#10007;' };
+      return '<div class="build-step">' +
+        '<div class="step-icon ' + s.status + '">' + (iconMap[s.status] || '?') + '</div>' +
+        '<div class="step-name">' + escHtml(s.name) + '</div>' +
+        '<div class="step-msg">' + escHtml(s.message || '') + '</div>' +
+        '<div class="step-time">' + (s.durationMs ? s.durationMs + 'ms' : '') + '</div>' +
+      '</div>';
+    }).join('');
+
+    // Build log
+    var logDiv = document.getElementById('buildLog');
+    var buildIdStr = build.buildId ? ' [' + build.buildId + ']' : '';
+    logDiv.innerHTML = '<div class="log-entry"><span class="ts">' + (build.timestamp?.slice(11,19) || '') + '</span> ' +
+      '<span class="level-' + (build.status === 'success' ? 'info' : 'error') + '">[BUILD' + escHtml(buildIdStr) + ']</span> ' +
+      '<span class="msg">' + build.agentName + ' - ' + build.status.toUpperCase() +
+      (build.productionReady ? ' - PRET POUR PRODUCTION' : ' - PAS PRET') + '</span></div>' +
+      (build.warnings || []).map(function(w) { return '<div class="log-entry"><span class="level-warn">[WARN]</span> <span class="msg">' + escHtml(w) + '</span></div>'; }).join('') +
+      (build.errors || []).map(function(e) { return '<div class="log-entry"><span class="level-error">[ERR]</span> <span class="msg">' + escHtml(e) + '</span></div>'; }).join('');
+
+    // Show result banner
+    if (data.success) {
+      banner.className = 'build-banner success';
+      banner.style.display = 'block';
+      banner.innerHTML = '<h3>&#10003; Build reussi !</h3>' +
+        '<p><b>' + escHtml(build.agentName) + '</b> est pret.' +
+        (build.productionReady ? ' Status : <b style="color:var(--success)">Production Ready</b>' : '') +
+        ' &mdash; Build ID : <code>' + escHtml(build.buildId || '') + '</code></p>' +
+        (build.warnings && build.warnings.length > 0 ? '<p style="margin-top:8px;color:var(--warning)">' + build.warnings.length + ' avertissement(s) &mdash; non bloquant(s).</p>' : '');
+
+      // Show embed code
+      var embedUrl = window.location.origin + '/embed?widget_id=default';
+      var snippet = '<iframe src="' + embedUrl + '" width="420" height="650" style="border:none;border-radius:16px;" allow="clipboard-write"></iframe>';
+      document.getElementById('embedCode').textContent = snippet;
+      document.getElementById('embedLink').href = embedUrl;
+      embedResult.style.display = 'block';
+
+      currentConfig = config;
+    } else {
+      banner.className = 'build-banner failure';
+      banner.style.display = 'block';
+      var errorList = (build.errors || []).map(function(e) { return '<li>' + escHtml(e) + '</li>'; }).join('');
+      var fixHints = (build.errors || []).map(function(e) {
+        var hint = getRemediationHint(e);
+        return hint ? '<li>' + hint + '</li>' : '';
+      }).filter(Boolean).join('');
+      banner.innerHTML = '<h3>&#10007; Build echoue</h3>' +
+        '<p>Le pipeline a rencontre des erreurs :</p>' +
+        '<ul style="margin:8px 0 0 20px;font-size:13px;color:var(--text)">' + errorList + '</ul>' +
+        (fixHints ? '<div class="fix-hint" style="margin-top:12px"><strong>Comment corriger</strong><ul style="margin:6px 0 0 16px;line-height:2">' + fixHints + '</ul></div>' : '');
+    }
+
+    await refreshLogs();
+
+  } catch (err) {
+    stepsDiv.innerHTML = '<div class="build-step"><div class="step-icon failure">&#10007;</div><div class="step-name">Erreur</div><div class="step-msg">' + escHtml(err.message) + '</div></div>';
+    banner.className = 'build-banner failure';
+    banner.style.display = 'block';
+    banner.innerHTML = '<h3>&#10007; Erreur inattendue</h3><p>' + escHtml(err.message) + '</p>' +
+      '<div class="fix-hint" style="margin-top:12px"><strong>Que faire</strong><p>Verifiez que le serveur tourne, que la base de donnees est accessible, et reessayez.</p></div>';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Construire l\'Agent';
+  }
+}
+
+function copyEmbed() {
+  var code = document.getElementById('embedCode').textContent;
+  navigator.clipboard.writeText(code).then(function() {
+    var btn = document.querySelector('.copy-btn');
+    btn.textContent = 'Copie !';
+    setTimeout(function() { btn.textContent = 'Copier'; }, 2000);
+  });
+}
+
+// ── Boot ─────────────────────────────────────────────────
+
+checkAuth();
+</script>
+</body>
+</html>

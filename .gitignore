@@ -7,6 +7,52 @@ yarn-error.log*
 # Build outputs
 dist/
 build/
+coverage/
+playwright-report/
+test-results/
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local secret/config dumps
+ORACLESENTINEL_CONFIG.txt
+**/ORACLESENTINEL_CONFIG.txt
+*_CONFIG.local.txt
+*.env.backup
+*.env.bak
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Sensitive files (auto-detected)
+build
+node_modules
+
+# Auto-generated entries
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
 *.log
 
 # Environment files
@@ -30,6 +76,18 @@ Thumbs.db
 .cache/
 
 # Sensitive files (auto-detected)
+.env
+.env.backup.1780788196576
+.env.backup.1780788196591
+.env.backup.1780788196610
+.env.backup.1780788196639
+.env.backup.1780788196669
+.env.backup.1780788196706
+.env.backup.1780788196732
+.env.backup.1780788196748
+.env.backup.1780788196762
+.env.backup.1780788196776
+.env.example
 build
 node_modules
 

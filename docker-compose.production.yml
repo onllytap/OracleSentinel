@@ -1,0 +1,88 @@
+# ============================================================================
+# OracleSentinel — Production Stack (cohabits with Twenty/n8n)
+# ============================================================================
+# PostgreSQL on port 5433 (avoids conflict with Twenty's PostgreSQL)
+# Express server on port 3001
+#
+# Usage:
+#   docker compose -f docker-compose.production.yml up -d --build
+#   docker compose -f docker-compose.production.yml logs -f oraclesentinel
+#   docker compose -f docker-compose.production.yml down
+# ============================================================================
+
+services:
+  # ── PostgreSQL (OracleSentinel DB) ────────────────────────────────────────
+  oraclesentinel-db:
+    image: postgres:16-alpine
+    container_name: oraclesentinel-db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oraclesentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oraclesentinel_prod_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-chatbot}
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - oraclesentinel-pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oraclesentinel} -d ${POSTGRES_DB:-chatbot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - oraclesentinel-net
+
+  # ── OracleSentinel Server ─────────────────────────────────────────────────
+  oraclesentinel:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: oraclesentinel-server
+    restart: unless-stopped
+
+    depends_on:
+      oraclesentinel-db:
+        condition: service_healthy
+
+    env_file:
+      - server/.env
+
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-oraclesentinel}:${POSTGRES_PASSWORD:-oraclesentinel_prod_2026}@oraclesentinel-db:5432/${POSTGRES_DB:-chatbot}
+      NODE_ENV: production
+      PORT: 3001
+
+    ports:
+      - "3001:3001"
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    networks:
+      - oraclesentinel-net
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  oraclesentinel-pgdata:
+    driver: local
+    name: oraclesentinel-pgdata
+
+networks:
+  oraclesentinel-net:
+    driver: bridge
+    name: oraclesentinel-network

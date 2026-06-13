@@ -9,7 +9,9 @@ import { HelpScreen } from './HelpScreen';
 import { ContactScreen } from './ContactScreen';
 import { BottomNavBar } from './BottomNavBar';
 import { useTheme } from '../contexts/ThemeContext';
+import { useToast } from '../contexts/ToastContext';
 import { api } from '../services/api';
+import { ScrollArea } from './ui/scroll-area';
 
 type Message = {
   id: string;
@@ -19,16 +21,55 @@ type Message = {
 };
 
 type MobileChatStage = 'welcome' | 'help' | 'chat';
+type MobileView = 'home' | 'messages' | 'help' | 'contact' | 'settings';
 
 export function MobileChatView() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { showError } = useToast();
+
+  const MESSAGES_STORAGE_KEY = 'mobileChat:messages:v1';
+  const SESSION_STORAGE_KEY = 'mobileChat:sessionId:v1';
+
+  const [sessionId, setSessionId] = useState(() => {
+    try {
+      if (typeof window === 'undefined') return 'session-' + Date.now();
+      return localStorage.getItem(SESSION_STORAGE_KEY) || 'session-' + Date.now();
+    } catch {
+      return 'session-' + Date.now();
+    }
+  });
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      if (typeof window === 'undefined') return [];
+      const raw = localStorage.getItem(MESSAGES_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as Array<Omit<Message, 'timestamp'> & { timestamp: string }>;
+      return parsed.map((m) => ({ ...m, timestamp: new Date(m.timestamp) }));
+    } catch {
+      return [];
+    }
+  });
+
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [conversationStage, setConversationStage] = useState<MobileChatStage>('welcome');
-  const [currentView, setCurrentView] = useState<'home' | 'messages' | 'help' | 'contact'>('home');
+  const [currentView, setCurrentView] = useState<MobileView>('home');
   const [isChatStarted, setIsChatStarted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { colors } = useTheme();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+    } catch {}
+  }, [sessionId]);
+
+  useEffect(() => {
+    try {
+      const serializable = messages.map((m) => ({ ...m, timestamp: m.timestamp.toISOString() }));
+      localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(serializable));
+    } catch {}
+  }, [messages]);
 
   const processUserMessage = async (content: string, type: 'user' | 'system' = 'user') => {
     addMessage(content, type);
@@ -43,7 +84,7 @@ export function MobileChatView() {
       await api.sendMessageStream(
         {
           message: content,
-          sessionId: 'session-' + Date.now(), // Simple session ID for now
+          sessionId: sessionId,
           context: { stage: conversationStage, view: currentView }
         },
         (chunk: string) => {
@@ -79,7 +120,7 @@ export function MobileChatView() {
     } catch (error) {
       console.error('API Error:', error);
       setIsTyping(false);
-      // addMessage("Désolé, une erreur est survenue.", 'system'); 
+      showError('Erreur de connexion, réessayez.');
     }
   };
 
@@ -93,6 +134,7 @@ export function MobileChatView() {
 
   const handleStartChat = () => {
     setConversationStage('chat');
+    setSessionId('session-' + Date.now());
     const botMessage: Message = {
       id: Date.now().toString(),
       type: 'bot',
@@ -112,11 +154,14 @@ export function MobileChatView() {
   const handleBackToWelcome = () => {
     setConversationStage('welcome');
     setMessages([]);
+    try {
+      localStorage.removeItem(MESSAGES_STORAGE_KEY);
+    } catch {}
     setCurrentView('home');
     setIsChatStarted(false);
   };
 
-  const handleNavigate = (view: 'home' | 'messages' | 'help' | 'contact') => {
+  const handleNavigate = (view: MobileView) => {
     setCurrentView(view);
 
     // Ne pas démarrer automatiquement le chat
@@ -146,12 +191,10 @@ export function MobileChatView() {
     processUserMessage(input);
   };
 
-
-
   // Show welcome screen
   if (currentView === 'home' || (currentView === 'messages' && !isChatStarted)) {
     return (
-      <div className="h-screen flex flex-col">
+      <div className="h-screen-safe flex flex-col">
         {currentView === 'home' ? (
           <WelcomeScreen onStartChat={() => {
             handleStartChat();
@@ -177,7 +220,7 @@ export function MobileChatView() {
   // Show help screen
   if (currentView === 'help') {
     return (
-      <div className="h-screen flex flex-col">
+      <div className="h-screen-safe flex flex-col">
         <HelpScreen onBack={() => setCurrentView('home')} />
         <BottomNavBar currentView={currentView} onNavigate={handleNavigate} />
       </div>
@@ -187,7 +230,7 @@ export function MobileChatView() {
   // Show contact screen
   if (currentView === 'contact') {
     return (
-      <div className="h-screen flex flex-col">
+      <div className="h-screen-safe flex flex-col">
         <ContactScreen onBack={() => setCurrentView('home')} />
         <BottomNavBar currentView={currentView} onNavigate={handleNavigate} />
       </div>
@@ -196,9 +239,9 @@ export function MobileChatView() {
 
   // Show messages/chat screen
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen-safe flex flex-col">
       <div
-        className="flex-1 flex flex-col max-w-md mx-auto w-full"
+        className="flex-1 flex flex-col min-h-0 max-w-md mx-auto w-full"
         style={{
           background: `linear-gradient(to bottom, ${colors.backgroundFrom}, ${colors.backgroundVia}, ${colors.backgroundTo})`
         }}
@@ -244,28 +287,28 @@ export function MobileChatView() {
           </div>
         </div>
 
-
-
         {/* Messages Area - Transparent to show gradient */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          {messages.map((message) => (
-            <div key={message.id} className="animate-slide-up">
-              <MessageBubble
-                type={message.type}
-                content={message.content}
-                timestamp={message.timestamp}
-              />
-            </div>
-          ))}
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="px-4 py-4 space-y-4">
+            {messages.map((message) => (
+              <div key={message.id} className="animate-slide-up">
+                <MessageBubble
+                  type={message.type}
+                  content={message.content}
+                  timestamp={message.timestamp}
+                />
+              </div>
+            ))}
 
-          {isTyping && (
-            <div className="animate-fade-in">
-              <TypingIndicator />
-            </div>
-          )}
+            {isTyping && (
+              <div className="animate-fade-in">
+                <TypingIndicator />
+              </div>
+            )}
 
-          <div ref={messagesEndRef} />
-        </div>
+            <div ref={messagesEndRef} />
+          </div>
+        </ScrollArea>
 
         {/* Trust Badge */}
         <div className="px-4 py-3 border-t border-gray-100 bg-white/80 backdrop-blur-sm">

@@ -9,14 +9,14 @@ interface SettingsScreenProps {
 }
 
 export function SettingsScreen({ onBack }: SettingsScreenProps) {
-  const { 
-    notifications, 
-    unreadCount, 
-    markAsRead, 
-    markAllAsRead, 
+  const {
+    notifications,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
     clearNotifications,
     isNotificationsEnabled,
-    toggleNotifications 
+    toggleNotifications
   } = useNotifications();
   const { colors } = useTheme();
   const [pushEnabled, setPushEnabled] = useState(true);
@@ -54,9 +54,9 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gradient-to-b from-blue-50/30 via-white to-white overflow-hidden">
+    <div className="h-full flex flex-col bg-gradient-to-b from-blue-50/30 via-white to-white overflow-hidden">
       {/* Header with gradient */}
-      <div 
+      <div
         className="relative px-5 py-4"
         style={{
           background: `linear-gradient(to bottom, ${colors.headerFrom}, ${colors.headerVia}, transparent)`
@@ -96,11 +96,11 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
             <div className="px-4 py-3 border-b border-gray-100">
               <h4 className="text-sm text-gray-900">Paramètres de notification</h4>
             </div>
-            
+
             {/* Main Toggle */}
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
               <div className="flex items-center gap-3">
-                <div 
+                <div
                   className="w-9 h-9 rounded-xl flex items-center justify-center"
                   style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primaryLight})` }}
                 >
@@ -116,14 +116,12 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
                   toggleNotifications();
                   requestNotificationPermission();
                 }}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  isNotificationsEnabled ? 'bg-green-500' : 'bg-gray-300'
-                }`}
+                className={`relative w-12 h-6 rounded-full transition-colors ${isNotificationsEnabled ? 'bg-green-500' : 'bg-gray-300'
+                  }`}
               >
                 <div
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    isNotificationsEnabled ? 'translate-x-6' : 'translate-x-0'
-                  }`}
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${isNotificationsEnabled ? 'translate-x-6' : 'translate-x-0'
+                    }`}
                 />
               </button>
             </div>
@@ -141,14 +139,12 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
               </div>
               <button
                 onClick={() => setPushEnabled(!pushEnabled)}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  pushEnabled ? 'bg-blue-500' : 'bg-gray-300'
-                }`}
+                className={`relative w-12 h-6 rounded-full transition-colors ${pushEnabled ? 'bg-blue-500' : 'bg-gray-300'
+                  }`}
               >
                 <div
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    pushEnabled ? 'translate-x-6' : 'translate-x-0'
-                  }`}
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${pushEnabled ? 'translate-x-6' : 'translate-x-0'
+                    }`}
                 />
               </button>
             </div>
@@ -166,14 +162,12 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
               </div>
               <button
                 onClick={() => setEmailEnabled(!emailEnabled)}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  emailEnabled ? 'bg-purple-500' : 'bg-gray-300'
-                }`}
+                className={`relative w-12 h-6 rounded-full transition-colors ${emailEnabled ? 'bg-purple-500' : 'bg-gray-300'
+                  }`}
               >
                 <div
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    emailEnabled ? 'translate-x-6' : 'translate-x-0'
-                  }`}
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${emailEnabled ? 'translate-x-6' : 'translate-x-0'
+                    }`}
                 />
               </button>
             </div>
@@ -191,14 +185,12 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
               </div>
               <button
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  soundEnabled ? 'bg-orange-500' : 'bg-gray-300'
-                }`}
+                className={`relative w-12 h-6 rounded-full transition-colors ${soundEnabled ? 'bg-orange-500' : 'bg-gray-300'
+                  }`}
               >
                 <div
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    soundEnabled ? 'translate-x-6' : 'translate-x-0'
-                  }`}
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${soundEnabled ? 'translate-x-6' : 'translate-x-0'
+                    }`}
                 />
               </button>
             </div>
@@ -221,7 +213,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           <div className="mb-3">
             <h4 className="text-sm text-gray-700">Historique</h4>
           </div>
-          
+
           {notifications.length === 0 ? (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -237,21 +229,19 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   onClick={() => markAsRead(notification.id)}
-                  className={`bg-white rounded-xl shadow-sm border transition-all cursor-pointer ${
-                    notification.read 
-                      ? 'border-gray-100' 
+                  className={`bg-white rounded-xl shadow-sm border transition-all cursor-pointer ${notification.read
+                      ? 'border-gray-100'
                       : 'border-blue-200 bg-blue-50/30'
-                  }`}
+                    }`}
                 >
                   <div className="px-4 py-3 flex gap-3">
-                    <div 
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        notification.type === 'message' 
-                          ? 'bg-blue-50 text-blue-600' 
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${notification.type === 'message'
+                          ? 'bg-blue-50 text-blue-600'
                           : notification.type === 'system'
-                          ? 'bg-purple-50 text-purple-600'
-                          : 'bg-green-50 text-green-600'
-                      }`}
+                            ? 'bg-purple-50 text-purple-600'
+                            : 'bg-green-50 text-green-600'
+                        }`}
                     >
                       {getNotificationIcon(notification.type)}
                     </div>

@@ -17,63 +17,63 @@ const socialLinks = [
   {
     name: 'Site Internet',
     icon: '🌐',
-    url: 'https://tsindustry.com',
+    url: 'https://oraclesentinel.com',
     description: 'Visitez notre site web',
     color: '#4A90FF',
   },
   {
     name: 'LinkedIn',
     icon: '💼',
-    url: 'https://linkedin.com/company/tsindustry',
+    url: 'https://linkedin.com/company/oraclesentinel',
     description: 'Suivez-nous sur LinkedIn',
     color: '#0A66C2',
   },
   {
     name: 'Twitter',
     icon: '🐦',
-    url: 'https://twitter.com/tsindustry',
+    url: 'https://twitter.com/oraclesentinel',
     description: 'Retrouvez-nous sur Twitter',
     color: '#1DA1F2',
   },
   {
     name: 'YouTube',
     icon: '▶️',
-    url: 'https://youtube.com/@tsindustry',
+    url: 'https://youtube.com/@oraclesentinel',
     description: 'Nos vidéos et tutoriels',
     color: '#FF0000',
   },
   {
     name: 'Reddit',
     icon: '🤖',
-    url: 'https://reddit.com/r/tsindustry',
+    url: 'https://reddit.com/r/oraclesentinel',
     description: 'Rejoignez notre communauté',
     color: '#FF4500',
   },
   {
     name: 'Instagram',
     icon: '📸',
-    url: 'https://instagram.com/tsindustry',
+    url: 'https://instagram.com/oraclesentinel',
     description: 'Nos actualités en images',
     color: '#E4405F',
   },
   {
     name: 'Facebook',
     icon: '👥',
-    url: 'https://facebook.com/tsindustry',
+    url: 'https://facebook.com/oraclesentinel',
     description: 'Notre page Facebook',
     color: '#1877F2',
   },
   {
     name: 'GitHub',
     icon: '⚡',
-    url: 'https://github.com/tsindustry',
+    url: 'https://github.com/oraclesentinel',
     description: 'Nos projets open source',
     color: '#181717',
   },
   {
     name: 'Email',
     icon: '✉️',
-    url: 'mailto:contact@tsindustry.com',
+    url: 'mailto:contact@oraclesentinel.com',
     description: 'Envoyez-nous un email',
     color: '#EA4335',
   },
@@ -83,9 +83,9 @@ export function ContactScreen({ onBack }: ContactScreenProps) {
   const { colors } = useTheme();
 
   return (
-    <div className="flex-1 flex flex-col bg-[#1A1A1A] h-full">
+    <div data-testid="contact-screen" className="h-full flex flex-col bg-[#1A1A1A] overflow-hidden">
       {/* Header */}
-      <div 
+      <div
         className="px-5 py-6 pb-8"
         style={{
           background: `linear-gradient(to bottom, ${colors.primary}, ${colors.secondary})`
@@ -103,7 +103,7 @@ export function ContactScreen({ onBack }: ContactScreenProps) {
           <h1 className="text-white text-2xl flex-1 text-center">Contact</h1>
           <div className="w-9"></div> {/* Spacer for centering */}
         </div>
-        
+
         <p className="text-white/90 text-center text-sm">
           Connectez-vous avec nous sur vos plateformes préférées
         </p>
@@ -122,13 +122,13 @@ export function ContactScreen({ onBack }: ContactScreenProps) {
             >
               <div className="flex items-center gap-4">
                 {/* Icon */}
-                <div 
+                <div
                   className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-lg"
                   style={{ backgroundColor: `${link.color}20` }}
                 >
                   {link.icon}
                 </div>
-                
+
                 {/* Content */}
                 <div className="flex-1">
                   <h3 className="text-white text-base mb-0.5 flex items-center gap-2">

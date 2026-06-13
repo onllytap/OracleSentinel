@@ -13,6 +13,7 @@ export function MessagesWelcomeScreen({ onStartChat, onOpenHelp }: MessagesWelco
 
   return (
     <div
+      data-testid="messages-welcome-screen"
       className="h-full flex flex-col items-center justify-center p-6 sm:p-8 relative overflow-hidden"
       style={{
         background: 'white'
@@ -127,6 +128,7 @@ export function MessagesWelcomeScreen({ onStartChat, onOpenHelp }: MessagesWelco
           transition={{ delay: 0.6 }}
         >
           <motion.button
+            data-testid="start-chat-button"
             onClick={onStartChat}
             className="w-full px-6 py-4 text-white rounded-2xl transition-all duration-300 flex items-center justify-between group shadow-xl hover:shadow-2xl relative overflow-hidden"
             style={{

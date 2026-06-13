@@ -1,0 +1,78 @@
+{
+  "$schema": "./profile-schema.json",
+  "id": "garage_motrio",
+  "name": "Garage Motrio",
+  "description": "Profil pour garage automobile Motrio (entretien/réparation/diagnostic)",
+  "version": "1.0.0",
+  "domain": "garage",
+
+  "branding": {
+    "companyName": "Motrio",
+    "companyTagline": "votre voiture, notre moteur\nDepuis plus de 20 ans, notre réseau de plus de 1500 réparateurs en France se tient à votre disposition.",
+    "companyWebsite": "https://www.motrio.fr/",
+    "companyDescription": "Réseau de garages et réparateurs automobiles : entretien, diagnostic et réparations multimarques.",
+    "companyServices": "Entretien/Révision,Vidange,Freinage,Pneumatiques,Batterie,Distribution,Embrayage,Climatisation,Diagnostic électronique,Pré-contrôle technique",
+    "targetAudience": "Conducteurs particuliers,Professionnels,TPE/PME,Flottes légères,Véhicules multimarques"
+  },
+
+  "variables": {
+    "VAR_AGENCE_NOM": "Motrio",
+    "VAR_AGENCE_ADRESSE": "45 Promenade Georges Godet, 85100 Les Sables-d'Olonne",
+    "VAR_HORAIRES_OUVERTURE": "Lundi au Samedi : 9h00 - 12h30 / 14h00 - 18h30",
+    "VAR_TELEPHONE": "02 51 21 03 03",
+    "VAR_EMAIL_CONTACT": "contact@motrio.com",
+    "VAR_INFO_FLASH": "Aucune info urgente pour le moment.",
+    "VAR_DIGICODE_ENTREE": "Non applicable"
+  },
+
+  "personality": {
+    "role": "assistant MÉCANICIEN AUTOMOBILE EXPERT et PROFESSIONNEL pour le réseau Motrio",
+    "expertise": "mécanicien professionnel et pédagogue",
+    "mission": "COMPRENDRE LE BESOIN : symptôme, type d'intervention (entretien/panne), véhicule (marque, modèle, année si possible)",
+    "tone": "warm",
+    "writingStyle": "professional",
+    "maxResponseWords": 40
+  },
+
+  "qualification": {
+    "requiredFields": [
+      "prenom",
+      "nom",
+      "numero_telephone",
+      "type",
+      "besoin",
+      "adresse"
+    ],
+    "checklist": [
+      "Type d'intervention (entretien, panne, diagnostic, etc.)",
+      "Besoin précis (symptôme, véhicule marque + modèle)",
+      "Prénom",
+      "Nom",
+      "Téléphone",
+      "Ville / secteur du client"
+    ],
+    "scoringRules": {
+      "prenom+nom": 15,
+      "numero_telephone": 20,
+      "email": 10,
+      "type": 15,
+      "besoin": 15,
+      "adresse": 15,
+      "date_rdv": 10
+    },
+    "minPushScore": 60
+  },
+
+  "knowledgeBase": {
+    "urls": ["https://www.motrio.fr/"],
+    "maxUrls": 3,
+    "cacheTtl": 3600
+  },
+
+  "metadata": {
+    "createdAt": "2026-02-09T00:00:00.000Z",
+    "updatedAt": "2026-02-09T00:00:00.000Z",
+    "author": "OracleSentinel",
+    "tags": ["garage", "automobile", "mechanics", "car-repair"]
+  }
+}

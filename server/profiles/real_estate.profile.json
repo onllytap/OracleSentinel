@@ -1,0 +1,121 @@
+{
+  "id": "real_estate",
+  "name": "Agence Immobilière",
+  "description": "Profil pour agences immobilières, mandataires, réseaux type Century21, Orpi, IAD, etc.",
+  "version": "1.0.0",
+
+  "domain": "immobilier",
+
+  "requiredFields": [
+    "prenom",
+    "nom",
+    "numero_telephone",
+    "type",
+    "besoin",
+    "adresse"
+  ],
+
+  "scoringRules": {
+    "prenom+nom": 15,
+    "numero_telephone": 20,
+    "email": 10,
+    "type": 15,
+    "besoin": 15,
+    "adresse": 15,
+    "date_rdv": 10
+  },
+
+  "typeEnum": [
+    "Achat immobilier",
+    "Vente immobilier",
+    "Location",
+    "Estimation",
+    "Investissement locatif",
+    "Gestion locative"
+  ],
+
+  "slotHints": {
+    "type": ["achat", "acheter", "cherche", "recherche", "vente", "vendre", "location", "louer", "estimation", "estimer", "investissement", "investir", "gestion locative", "mandat"],
+    "besoin": ["t1", "t2", "t3", "t4", "t5", "studio", "appartement", "maison", "villa", "terrain", "local", "commerce", "bureau", "parking", "garage", "cave", "loft", "duplex", "triplex", "penthouse", "chambre", "colocation", "meublé", "neuf", "ancien", "piscine", "jardin", "terrasse", "balcon", "étage", "rez-de-chaussée", "ascenseur"],
+    "adresse": ["ville", "quartier", "secteur", "commune", "arrondissement", "département", "centre-ville", "périphérie", "campagne", "bord de mer", "montagne"]
+  },
+
+  "questionPlan": [
+    {
+      "field": "type",
+      "priority": 1,
+      "question": "Votre projet concerne un achat, une vente, ou une location ?",
+      "hint": "demander le type de projet (achat/vente/location)"
+    },
+    {
+      "field": "besoin",
+      "priority": 2,
+      "question": "Quel type de bien recherchez-vous ? (appartement, maison, surface, nombre de pièces…)",
+      "hint": "demander la description du bien recherché"
+    },
+    {
+      "field": "adresse",
+      "priority": 3,
+      "question": "Dans quel secteur ou quelle ville souhaitez-vous chercher ?",
+      "hint": "demander le secteur ou la ville"
+    },
+    {
+      "field": "prenom",
+      "priority": 4,
+      "question": "Puis-je avoir votre prénom ?",
+      "hint": "demander le prénom"
+    },
+    {
+      "field": "nom",
+      "priority": 5,
+      "question": "Et votre nom de famille ?",
+      "hint": "demander le nom de famille"
+    },
+    {
+      "field": "numero_telephone",
+      "priority": 6,
+      "question": "À quel numéro peut-on vous recontacter ?",
+      "hint": "demander le numéro de téléphone"
+    },
+    {
+      "field": "date_rdv",
+      "priority": 7,
+      "question": "Souhaitez-vous convenir d'un rendez-vous pour une visite ou un entretien ?",
+      "hint": "proposer un rendez-vous"
+    }
+  ],
+
+  "notesTemplate": "Projet: {type}\nBien: {besoin}\nSecteur: {adresse}\nBudget: (à extraire des notes)\nDisponibilité: {date_rdv}\n---\n{notes}",
+
+  "crmTag": "REAL_ESTATE",
+
+  "extractionPromptIntro": "Tu es un extracteur de données EXPERT pour CRM immobilier.",
+
+  "besoinLabel": "description du bien recherché (ex: T3, maison, appartement, surface, budget)",
+  "adresseLabel": "secteur/ville recherché",
+
+  "extractionExamples": [
+    {
+      "input": "Je m'appelle Jean Dupont, je cherche un T3 aux Sables, 06 12 34 56 78",
+      "output": {
+        "prenom": "Jean",
+        "nom": "Dupont",
+        "numero_telephone": "0612345678",
+        "type": "Achat immobilier",
+        "besoin": "T3",
+        "adresse": "Les Sables d'Olonne"
+      }
+    },
+    {
+      "input": "Marie Martin ici, T2 pour location à La Roche, mon tel 0698765432",
+      "output": {
+        "prenom": "Marie",
+        "nom": "Martin",
+        "numero_telephone": "0698765432",
+        "type": "Location",
+        "besoin": "T2",
+        "adresse": "La Roche"
+      }
+    }
+  ]
+}

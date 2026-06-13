@@ -1,0 +1,72 @@
+# Dependencies (will be installed in container)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output (will be built in container)
+dist/
+build/
+
+# Environment files (mounted at runtime, never baked into image)
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# Docker files (no need to copy into themselves)
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+.dockerignore
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# Test files
+test/
+coverage/
+.nyc_output/
+
+# Scripts (dev-only, not needed in production image)
+scripts/
+
+# Logs
+*.log
+server.log
+
+# Backup files
+*.backup.*
+
+# Agent / AI tool configs
+.agent/
+.agents/
+.claude/
+.cursor/
+.gemini/
+.kilocode/
+.kiro/
+.opencode/
+.qoder/
+.windsurf/
+
+# Temporary files
+tmp/
+temp/

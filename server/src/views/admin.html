@@ -1,0 +1,1238 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Admin — Base de Données & Import</title>
+  <style>
+    :root {
+      --bg: #050a18;
+      --surface: #0b1228;
+      --card: #0f172a;
+      --border: #1e2d4a;
+      --border-light: #2a3f6a;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --info: #3b82f6;
+      --text: #e5e7eb;
+      --text-muted: #8892b0;
+      --text-dim: #4a5568;
+      --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono: ui-monospace, 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Layout ─────────────────────────────────────── */
+    .app-shell { display: flex; min-height: 100vh; }
+
+    .sidebar {
+      width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .sidebar-brand {
+      padding: 20px 16px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-brand h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+    .sidebar-brand p { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+    .nav-section { padding: 12px 8px 4px; font-size: 9px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); padding-left: 16px; }
+
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; margin: 2px 8px;
+      border-radius: var(--radius-sm);
+      cursor: pointer; font-size: 13px; color: var(--text-muted);
+      transition: all 0.15s;
+    }
+    .nav-item:hover { background: rgba(99,102,241,0.08); color: var(--text); }
+    .nav-item.active { background: rgba(99,102,241,0.15); color: #fff; font-weight: 600; }
+    .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .nav-item .badge {
+      margin-left: auto;
+      background: var(--accent);
+      color: #fff;
+      font-size: 10px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .sidebar-footer .db-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.2);
+      color: var(--success);
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .sidebar-footer .db-badge.err {
+      background: rgba(239,68,68,0.1);
+      border-color: rgba(239,68,68,0.2);
+      color: var(--danger);
+    }
+    .sidebar-footer .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    .main {
+      flex: 1;
+      padding: 24px 32px;
+      overflow-y: auto;
+      min-width: 0;
+    }
+
+    /* ── Panels ─────────────────────────────────────── */
+    .panel { display: none; }
+    .panel.active { display: block; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    .panel-header { margin-bottom: 20px; }
+    .panel-header h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .panel-header p { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+
+    /* ── Cards ──────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .card-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px;
+    }
+    .card-header h3 { font-size: 14px; font-weight: 600; }
+
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      text-align: center;
+    }
+    .stat-box .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 6px; }
+    .stat-box .value { font-size: 26px; font-weight: 800; letter-spacing: -1px; }
+    .stat-box .sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+    .stat-box.ok { border-color: rgba(34,197,94,0.3); }
+    .stat-box.ok .value { color: var(--success); }
+    .stat-box.warn { border-color: rgba(245,158,11,0.3); }
+    .stat-box.warn .value { color: var(--warning); }
+
+    /* ── Tables ─────────────────────────────────────── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .data-table th {
+      text-align: left;
+      padding: 10px 12px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .data-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(30,45,74,0.5);
+      vertical-align: top;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .data-table tr:hover td { background: rgba(99,102,241,0.04); }
+    .data-table .mono { font-family: var(--mono); font-size: 11px; }
+    .data-table .truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .data-table .row-expandable { cursor: pointer; }
+    .data-table .row-expandable:hover td { background: rgba(99,102,241,0.08); }
+
+    .detail-row td {
+      padding: 0 12px 12px 40px;
+      background: rgba(15,23,42,0.6);
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-row .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px;
+      padding: 12px 0;
+      font-size: 12px;
+    }
+    .detail-row .detail-grid .dk { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail-row .detail-grid .dv { color: var(--text); margin-top: 2px; word-break: break-all; }
+
+    /* ── Tags ───────────────────────────────────────── */
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .tag-ok { background: rgba(34,197,94,0.12); color: var(--success); border: 1px solid rgba(34,197,94,0.25); }
+    .tag-warn { background: rgba(245,158,11,0.12); color: var(--warning); border: 1px solid rgba(245,158,11,0.25); }
+    .tag-err { background: rgba(239,68,68,0.12); color: var(--danger); border: 1px solid rgba(239,68,68,0.25); }
+    .tag-info { background: rgba(59,130,246,0.12); color: var(--info); border: 1px solid rgba(59,130,246,0.25); }
+    .tag-muted { background: rgba(75,85,99,0.15); color: var(--text-muted); border: 1px solid rgba(75,85,99,0.25); }
+
+    /* ── Buttons ────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+      color: #fff;
+      transition: all 0.15s;
+      font-family: var(--font);
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-danger { background: var(--danger); border-color: var(--danger); }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .btn-ghost { background: transparent; border-color: var(--border); color: var(--text-muted); }
+    .btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+    .btn-xs { padding: 2px 8px; font-size: 10px; border-radius: 6px; }
+
+    /* ── Forms ──────────────────────────────────────── */
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
+    .input, select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .input:focus, select:focus { border-color: var(--accent); }
+    .input::placeholder { color: var(--text-dim); }
+    textarea.input { min-height: 180px; font-family: var(--mono); font-size: 12px; resize: vertical; }
+
+    /* ── Pagination ─────────────────────────────────── */
+    .pagination {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 14px; justify-content: center;
+    }
+    .pagination .page-info { font-size: 12px; color: var(--text-muted); }
+    .pagination .btn { min-width: 32px; justify-content: center; }
+
+    /* ── Misc ───────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state .icon { font-size: 36px; margin-bottom: 8px; }
+    .empty-state h3 { font-size: 15px; margin-bottom: 4px; color: var(--text); }
+    .empty-state p { font-size: 12px; }
+
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .alert {
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .alert-info { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); color: var(--info); }
+    .alert-ok { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); color: var(--success); }
+    .alert-err { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); color: var(--danger); }
+    .alert-warn { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: var(--warning); }
+
+    .tenant-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px;
+      background: rgba(99,102,241,0.1);
+      border: 1px solid rgba(99,102,241,0.25);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-hover);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tenant-pill:hover { background: rgba(99,102,241,0.2); }
+    .tenant-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    .detail-json {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      max-height: 200px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--text-muted);
+    }
+
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+    .flex-center { display: flex; align-items: center; gap: 8px; }
+    .ml-auto { margin-left: auto; }
+    .mt-8 { margin-top: 8px; }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .mb-8 { margin-bottom: 8px; }
+    .mb-12 { margin-bottom: 12px; }
+    .gap-8 { gap: 8px; }
+    .text-muted { color: var(--text-muted); }
+    .text-xs { font-size: 11px; }
+    .text-xxs { font-size: 10px; }
+    .text-mono { font-family: var(--mono); }
+    .text-success { color: var(--success); }
+    .text-danger { color: var(--danger); }
+    .text-warning { color: var(--warning); }
+    .fw-700 { font-weight: 700; }
+
+    /* ── Login Overlay ─────────────────────────────── */
+    .login-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg);
+    }
+    .login-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      width: 380px;
+      max-width: 90vw;
+      text-align: center;
+    }
+    .login-card h1 { font-size: 18px; margin-bottom: 4px; }
+    .login-card p { font-size: 12px; color: var(--text-muted); margin-bottom: 20px; }
+    .login-card .input { width: 100%; margin-bottom: 12px; }
+    .login-card .btn { width: 100%; justify-content: center; }
+
+    /* ── Responsive ─────────────────────────────────── */
+    @media (max-width: 768px) {
+      .sidebar { width: 60px; }
+      .sidebar .nav-item span, .sidebar-brand p, .sidebar .nav-section, .sidebar-footer span:not(.dot) { display: none; }
+      .sidebar-brand h1 { font-size: 11px; text-align: center; }
+      .main { padding: 16px; }
+      .card-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ── Scrollbar ──────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════ LOGIN OVERLAY ═══════════════════ -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <h1>&#128274; Admin Panel</h1>
+    <p>Base de donnees & Import XML</p>
+    <input class="input" id="loginKey" type="password" placeholder="Cle admin" autocomplete="off"/>
+    <button class="btn btn-primary" id="btnLogin">Connexion</button>
+    <p class="mt-8 text-xxs text-muted">Session cookie HttpOnly — 30 min</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ MAIN SHELL ═══════════════════ -->
+<div class="app-shell" id="appShell" style="display:none">
+
+  <!-- ── Sidebar ─────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <h1>&#9881; Admin Panel</h1>
+      <p>Database & Import</p>
+    </div>
+
+    <div class="nav-section">Visualisation</div>
+
+    <div class="nav-item active" data-panel="overview">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span>Vue d'ensemble</span>
+    </div>
+
+    <div class="nav-item" data-panel="tenants">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span>Tenants</span>
+      <span class="badge" id="badgeTenants">-</span>
+    </div>
+
+    <div class="nav-item" data-panel="properties">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>Proprietes</span>
+      <span class="badge" id="badgeProps">-</span>
+    </div>
+
+    <div class="nav-item" data-panel="imports">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      <span>Imports</span>
+      <span class="badge" id="badgeImports">-</span>
+    </div>
+
+    <div class="nav-item" data-panel="conversations">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Conversations</span>
+      <span class="badge" id="badgeConvs">-</span>
+    </div>
+
+    <div class="nav-section">Actions</div>
+
+    <div class="nav-item" data-panel="import-xml">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <span>Import XML</span>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="db-badge" id="dbStatus">
+        <span class="dot"></span>
+        <span id="dbStatusText">Connexion...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main Content ────────────────────────────────── -->
+  <main class="main">
+
+    <!-- ═══ OVERVIEW PANEL ═══ -->
+    <div id="panel-overview" class="panel active">
+      <div class="panel-header">
+        <h2>&#128202; Vue d'ensemble de la base</h2>
+        <p>Tout ce qui existe dans PostgreSQL en un coup d'oeil</p>
+      </div>
+
+      <div class="card-grid" id="overviewStats">
+        <div class="stat-box" id="ov-properties"><div class="label">Proprietes</div><div class="value">--</div><div class="sub">catalog_properties</div></div>
+        <div class="stat-box" id="ov-tenants"><div class="label">Tenants</div><div class="value">--</div><div class="sub">groupes distincts</div></div>
+        <div class="stat-box" id="ov-imports"><div class="label">Imports</div><div class="value">--</div><div class="sub">catalog_import_runs</div></div>
+        <div class="stat-box" id="ov-conversations"><div class="label">Conversations</div><div class="value">--</div><div class="sub">conversations</div></div>
+        <div class="stat-box" id="ov-messages"><div class="label">Messages</div><div class="value">--</div><div class="sub">messages</div></div>
+        <div class="stat-box" id="ov-leads"><div class="label">Leads</div><div class="value">--</div><div class="sub">leads</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>&#128200; Repartition par tenant</h3>
+          <button class="btn btn-ghost btn-sm" onclick="loadOverview()">&#8635; Rafraichir</button>
+        </div>
+        <div id="overviewTenantBars"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>&#128268; Configuration .env active</h3>
+        </div>
+        <div id="overviewEnvInfo" class="text-xs text-muted">Chargement...</div>
+      </div>
+    </div>
+
+    <!-- ═══ TENANTS PANEL ═══ -->
+    <div id="panel-tenants" class="panel">
+      <div class="panel-header">
+        <h2>&#128101; Gestion des Tenants</h2>
+        <p>Chaque tenant = 1 groupe de donnees isole (1 client, 1 widget)</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Tous les tenants en base</h3>
+          <button class="btn btn-ghost btn-sm" onclick="loadTenants()">&#8635; Rafraichir</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="tenantsTable">
+            <thead>
+              <tr>
+                <th>Tenant ID</th>
+                <th>Proprietes</th>
+                <th>Disponibles</th>
+                <th>Retirees</th>
+                <th>Conversations</th>
+                <th>Leads</th>
+                <th>Dernier import</th>
+                <th>Widget Map</th>
+                <th style="text-align:right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tenantsBody">
+              <tr><td colspan="9" class="empty-state"><span class="spinner"></span> Chargement...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="tenantAlert" class="mt-12"></div>
+      </div>
+    </div>
+
+    <!-- ═══ PROPERTIES PANEL ═══ -->
+    <div id="panel-properties" class="panel">
+      <div class="panel-header">
+        <h2>&#127968; Explorateur de Proprietes</h2>
+        <p>Parcourir toutes les donnees XML chargees en base — cliquez une ligne pour voir le detail</p>
+      </div>
+
+      <div class="card mb-12">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Tenant</label>
+            <select class="input" id="propFilterTenant" onchange="loadProperties(1)" style="min-width:160px">
+              <option value="">Tous</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Statut</label>
+            <select class="input" id="propFilterStatus" onchange="loadProperties(1)" style="min-width:130px">
+              <option value="">Tous</option>
+              <option value="disponible">Disponible</option>
+              <option value="sous_offre">Sous offre</option>
+              <option value="vendu">Vendu</option>
+              <option value="retire">Retire</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Type</label>
+            <select class="input" id="propFilterType" onchange="loadProperties(1)" style="min-width:130px">
+              <option value="">Tous</option>
+              <option value="maison">Maison</option>
+              <option value="appartement">Appartement</option>
+              <option value="terrain">Terrain</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;min-width:180px">
+            <label>Recherche</label>
+            <input class="input" id="propFilterSearch" type="text" placeholder="Ville, ref, titre..." onkeydown="if(event.key==='Enter')loadProperties(1)"/>
+          </div>
+          <div class="form-group">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary btn-sm" onclick="loadProperties(1)">Rechercher</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 id="propsTitle">Toutes les proprietes</h3>
+          <span class="text-xs text-muted" id="propsCount">--</span>
+        </div>
+        <div style="overflow-x:auto;max-height:65vh;overflow-y:auto">
+          <table class="data-table" id="propsTable">
+            <thead>
+              <tr>
+                <th style="width:28px"></th>
+                <th>Reference</th>
+                <th>Tenant</th>
+                <th>Type</th>
+                <th>Transaction</th>
+                <th>Statut</th>
+                <th>Prix</th>
+                <th>Surface</th>
+                <th>Ville</th>
+                <th>Titre</th>
+                <th style="text-align:right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="propsBody">
+              <tr><td colspan="11" class="empty-state"><span class="spinner"></span> Chargement...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="propsPagination"></div>
+      </div>
+    </div>
+
+    <!-- ═══ IMPORTS PANEL ═══ -->
+    <div id="panel-imports" class="panel">
+      <div class="panel-header">
+        <h2>&#128230; Historique des Imports</h2>
+        <p>Tous les import runs XML effectues via /admin ou /factory</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Derniers imports</h3>
+          <div class="flex-center gap-8">
+            <select class="input" id="importFilterTenant" onchange="loadImports()" style="min-width:140px;padding:6px 10px;font-size:12px">
+              <option value="">Tous les tenants</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadImports()">&#8635;</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table" id="importsTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Tenant</th>
+                <th>Mode</th>
+                <th>Vus</th>
+                <th>Erreurs</th>
+                <th>Date</th>
+                <th>Commit</th>
+              </tr>
+            </thead>
+            <tbody id="importsBody">
+              <tr><td colspan="7" class="empty-state"><span class="spinner"></span> Chargement...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ CONVERSATIONS PANEL ═══ -->
+    <div id="panel-conversations" class="panel">
+      <div class="panel-header">
+        <h2>&#128172; Conversations & Leads</h2>
+        <p>Historique des conversations et leads collectes par le chatbot</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Dernieres conversations</h3>
+          <button class="btn btn-ghost btn-sm" onclick="loadConversations()">&#8635;</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Tenant</th>
+                <th>Statut</th>
+                <th>Messages</th>
+                <th>Cree le</th>
+                <th>Mis a jour</th>
+              </tr>
+            </thead>
+            <tbody id="convsBody">
+              <tr><td colspan="6" class="empty-state"><span class="spinner"></span> Chargement...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mt-16">
+        <div class="card-header">
+          <h3>Derniers leads</h3>
+          <button class="btn btn-ghost btn-sm" onclick="loadConversations()">&#8635;</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Telephone</th>
+                <th>Tenant</th>
+                <th>Besoin</th>
+                <th>Timeline</th>
+                <th>Cree le</th>
+              </tr>
+            </thead>
+            <tbody id="leadsBody">
+              <tr><td colspan="6" class="empty-state"><span class="spinner"></span> Chargement...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ IMPORT XML PANEL ═══ -->
+    <div id="panel-import-xml" class="panel">
+      <div class="panel-header">
+        <h2>&#128228; Import XML</h2>
+        <p>Charger un fichier XML dans la base de connaissance</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Nouveau fichier XML</h3>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="min-width:200px">
+            <label>Tenant (groupe)</label>
+            <input class="input" id="importTenant" type="text" placeholder="ex: garage_dupont"/>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Fichier XML</label>
+            <input class="input" id="importFile" type="file" accept=".xml,text/xml,application/xml" style="padding:8px"/>
+          </div>
+        </div>
+        <div class="flex-center gap-8 mt-8">
+          <button class="btn btn-ghost" onclick="doImport('dry-run')">&#128269; Dry-run (apercu)</button>
+          <button class="btn btn-primary" onclick="doImport('commit')">&#9989; Commit en base</button>
+        </div>
+        <div id="importAlert" class="mt-12"></div>
+        <pre id="importOutput" class="detail-json mt-8" style="display:none"></pre>
+      </div>
+
+      <div class="card mt-16">
+        <div class="card-header">
+          <h3>&#128161; Aide rapide</h3>
+        </div>
+        <div class="text-xs text-muted" style="line-height:2">
+          <b>1.</b> Entrez le <b>tenant_id</b> = le groupe de ce fichier (ex: <code>garage_dupont</code>, <code>immo_paris</code>)<br>
+          <b>2.</b> Ce tenant doit correspondre a une entree dans <code></code>WIDGET_TENANT_MAP</code> de votre .env<br>
+          <b>3.</b> <b>Dry-run</b> = preview sans ecrire en base / <b>Commit</b> = ecriture reelle<br>
+          <b>4.</b> Formats XML supportes : <code>&lt;catalog&gt;&lt;listing&gt;</code>, <code>&lt;annonces_immobilieres&gt;&lt;annonce&gt;</code>, <code>&lt;properties&gt;&lt;property&gt;</code>, format <code>&lt;bien&gt;</code><br>
+          <b>5.</b> Apres commit, les donnees apparaissent immediatement dans l'onglet <b>Proprietes</b>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
+<script>
+// ── Globals ─────────────────────────────────────────
+var currentPage = 1;
+var pageSize = 25;
+var tenantList = [];
+
+// ── API ─────────────────────────────────────────────
+function getCookie(name) {
+  var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : '';
+}
+
+async function api(path, opts) {
+  opts = opts || {};
+  var headers = Object.assign({}, opts.headers || { 'Content-Type': 'application/json' });
+  var method = (opts.method || 'GET').toUpperCase();
+  var csrfToken = getCookie('csrf_token');
+  if (csrfToken && ['POST', 'PUT', 'DELETE'].indexOf(method) !== -1) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
+  var res = await fetch(path, Object.assign({}, opts, { headers: headers }));
+  var txt = await res.text();
+  var data;
+  try { data = txt ? JSON.parse(txt) : null; } catch(e) { data = { raw: txt }; }
+  if (!res.ok) throw Object.assign(new Error(data && data.error || 'Erreur ' + res.status), { status: res.status, data: data });
+  return data;
+}
+
+function esc(s) {
+  if (!s) return '';
+  var d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function fmtDate(d) {
+  if (!d) return '--';
+  var dt = new Date(d);
+  if (isNaN(dt.getTime())) return '--';
+  return dt.toLocaleDateString('fr-FR') + ' ' + dt.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+}
+
+function fmtPrice(n) {
+  if (n == null) return '--';
+  return Number(n).toLocaleString('fr-FR') + ' \u20AC';
+}
+
+function statusTag(s) {
+  var map = { disponible: 'ok', sous_offre: 'warn', vendu: 'info', retire: 'muted' };
+  return '<span class="tag tag-' + (map[s] || 'muted') + '">' + esc(s || '?') + '</span>';
+}
+
+function setStatBox(id, val, cls) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.querySelector('.value').textContent = val;
+  el.className = 'stat-box' + (cls ? ' ' + cls : '');
+}
+
+// ── Auth ────────────────────────────────────────────
+async function checkAuth() {
+  try {
+    await api('/api/admin/status');
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('appShell').style.display = 'flex';
+    boot();
+  } catch(e) {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('appShell').style.display = 'none';
+  }
+}
+
+document.getElementById('btnLogin').addEventListener('click', async function() {
+  try {
+    var key = document.getElementById('loginKey').value || '';
+    await api('/api/admin/session', { method: 'POST', body: JSON.stringify({ key: key }) });
+    document.getElementById('loginKey').value = '';
+    await checkAuth();
+  } catch(e) {
+    alert('Cle invalide');
+  }
+});
+
+document.getElementById('loginKey').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') document.getElementById('btnLogin').click();
+});
+
+// ── Navigation ──────────────────────────────────────
+document.querySelectorAll('.nav-item[data-panel]').forEach(function(item) {
+  item.addEventListener('click', function() {
+    document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); });
+    document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+    item.classList.add('active');
+    var pid = 'panel-' + item.dataset.panel;
+    var panel = document.getElementById(pid);
+    if (panel) panel.classList.add('active');
+
+    // Auto-refresh
+    var p = item.dataset.panel;
+    if (p === 'overview') loadOverview();
+    if (p === 'tenants') loadTenants();
+    if (p === 'properties') loadProperties(1);
+    if (p === 'imports') loadImports();
+    if (p === 'conversations') loadConversations();
+  });
+});
+
+// ── Boot ────────────────────────────────────────────
+async function boot() {
+  await loadOverview();
+}
+
+// ── Overview Panel ──────────────────────────────────
+async function loadOverview() {
+  try {
+    var d = await api('/api/admin/db/overview');
+    setStatBox('ov-properties', d.properties || 0, d.properties > 0 ? 'ok' : '');
+    setStatBox('ov-tenants', d.tenants || 0, d.tenants > 0 ? 'ok' : '');
+    setStatBox('ov-imports', d.imports || 0, d.imports > 0 ? 'ok' : '');
+    setStatBox('ov-conversations', d.conversations || 0, d.conversations > 0 ? 'ok' : '');
+    setStatBox('ov-messages', d.messages || 0, '');
+    setStatBox('ov-leads', d.leads || 0, d.leads > 0 ? 'ok' : '');
+
+    // Badges
+    document.getElementById('badgeTenants').textContent = d.tenants || 0;
+    document.getElementById('badgeProps').textContent = d.properties || 0;
+    document.getElementById('badgeImports').textContent = d.imports || 0;
+    document.getElementById('badgeConvs').textContent = d.conversations || 0;
+
+    // DB status
+    var dbBadge = document.getElementById('dbStatus');
+    dbBadge.className = 'db-badge';
+    document.getElementById('dbStatusText').textContent = 'PostgreSQL OK';
+
+    // Tenant breakdown bars
+    var barsDiv = document.getElementById('overviewTenantBars');
+    if (d.tenantBreakdown && d.tenantBreakdown.length > 0) {
+      var maxCount = Math.max.apply(null, d.tenantBreakdown.map(function(t){ return t.count; }));
+      barsDiv.innerHTML = d.tenantBreakdown.map(function(t) {
+        var pct = maxCount > 0 ? Math.round(t.count / maxCount * 100) : 0;
+        return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">' +
+          '<span class="text-xs fw-700" style="min-width:120px">' + esc(t.tenant_id) + '</span>' +
+          '<div style="flex:1;height:20px;background:var(--bg);border-radius:4px;overflow:hidden;border:1px solid var(--border)">' +
+            '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-hover));border-radius:4px;transition:width 0.5s"></div>' +
+          '</div>' +
+          '<span class="text-xs text-muted" style="min-width:50px;text-align:right">' + t.count + ' props</span>' +
+        '</div>';
+      }).join('');
+    } else {
+      barsDiv.innerHTML = '<div class="empty-state"><div class="icon">&#128451;</div><h3>Aucune donnee</h3><p>Importez un XML pour commencer</p></div>';
+    }
+
+    // Env info
+    var envDiv = document.getElementById('overviewEnvInfo');
+    envDiv.innerHTML = (d.envInfo || []).map(function(item) {
+      return '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">' +
+        '<span class="text-mono text-muted" style="min-width:200px">' + esc(item.key) + '</span>' +
+        '<span class="text-mono">' + esc(item.value) + '</span>' +
+      '</div>';
+    }).join('') || '<span class="text-muted">Aucune info .env</span>';
+
+    // Populate tenant selects
+    tenantList = (d.tenantBreakdown || []).map(function(t){ return t.tenant_id; });
+    populateTenantSelects();
+
+  } catch(e) {
+    var dbBadge = document.getElementById('dbStatus');
+    dbBadge.className = 'db-badge err';
+    document.getElementById('dbStatusText').textContent = 'Erreur DB';
+    console.error('Overview failed:', e);
+  }
+}
+
+function populateTenantSelects() {
+  var selects = ['propFilterTenant', 'importFilterTenant'];
+  selects.forEach(function(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    var val = sel.value;
+    var opts = '<option value="">Tous</option>';
+    tenantList.forEach(function(t) {
+      opts += '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+    });
+    sel.innerHTML = opts;
+    sel.value = val;
+  });
+  // Import tenant default
+  var impTen = document.getElementById('importTenant');
+  if (impTen && !impTen.value && tenantList.length > 0) {
+    impTen.value = tenantList[0];
+  }
+}
+
+// ── Tenants Panel ───────────────────────────────────
+async function loadTenants() {
+  var tbody = document.getElementById('tenantsBody');
+  tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><span class="spinner"></span> Chargement...</td></tr>';
+  try {
+    var d = await api('/api/admin/db/tenants');
+    if (!d.tenants || d.tenants.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">&#128451;</div><h3>Aucun tenant</h3><p>Importez un XML pour creer votre premier tenant</p></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.tenants.map(function(t) {
+      var widgetIds = t.widgetIds ? t.widgetIds.join(', ') : '--';
+      return '<tr>' +
+        '<td><strong>' + esc(t.tenant_id) + '</strong></td>' +
+        '<td class="fw-700">' + t.property_count + '</td>' +
+        '<td class="text-success">' + t.available + '</td>' +
+        '<td class="text-muted">' + t.retired + '</td>' +
+        '<td>' + t.conversation_count + '</td>' +
+        '<td>' + t.lead_count + '</td>' +
+        '<td class="text-xs">' + fmtDate(t.last_import) + '</td>' +
+        '<td class="text-xs text-mono">' + esc(widgetIds) + '</td>' +
+        '<td style="text-align:right">' +
+          '<button class="btn btn-ghost btn-xs" onclick="browseProps(\'' + esc(t.tenant_id) + '\')">&#128269; Voir</button> ' +
+          '<button class="btn btn-danger btn-xs" onclick="deleteTenant(\'' + esc(t.tenant_id) + '\')">&#128465; Suppr</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">&#9888;</div><h3>Erreur</h3><p>' + esc(e.message) + '</p></div></td></tr>';
+  }
+}
+
+function browseProps(tenantId) {
+  document.getElementById('propFilterTenant').value = tenantId;
+  // Navigate to properties panel
+  document.querySelectorAll('.nav-item').forEach(function(i){ i.classList.remove('active'); });
+  document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelector('.nav-item[data-panel="properties"]').classList.add('active');
+  document.getElementById('panel-properties').classList.add('active');
+  loadProperties(1);
+}
+
+async function deleteTenant(tid) {
+  if (!confirm('SUPPRIMER le tenant "' + tid + '" ?\n\nToutes les donnees seront effacees :\n- Proprietes\n- Imports\n- Conversations\n- Messages\n- Leads\n\nIRREVERSIBLE.')) return;
+  if (!confirm('Derniere chance : confirmer suppression de "' + tid + '" ?')) return;
+
+  var alertDiv = document.getElementById('tenantAlert');
+  alertDiv.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> Suppression en cours...</div>';
+
+  try {
+    var d = await api('/api/admin/db/tenant/' + encodeURIComponent(tid), { method: 'DELETE' });
+    alertDiv.innerHTML = '<div class="alert alert-ok">&#9989; Tenant "' + esc(tid) + '" supprime : ' +
+      d.propertiesDeleted + ' proprietes, ' + d.runsDeleted + ' imports, ' +
+      d.conversationsDeleted + ' conversations, ' + d.leadsDeleted + ' leads' +
+      (d.hint ? '<br><span class="text-warning">' + esc(d.hint) + '</span>' : '') + '</div>';
+    await loadTenants();
+    await loadOverview();
+  } catch(e) {
+    alertDiv.innerHTML = '<div class="alert alert-err">&#10060; Erreur : ' + esc(e.message) + '</div>';
+  }
+}
+
+// ── Properties Panel ────────────────────────────────
+async function loadProperties(page) {
+  currentPage = page || 1;
+  var tbody = document.getElementById('propsBody');
+  tbody.innerHTML = '<tr><td colspan="11" class="empty-state"><span class="spinner"></span></td></tr>';
+
+  var params = new URLSearchParams();
+  params.set('page', currentPage);
+  params.set('limit', pageSize);
+  var tenant = document.getElementById('propFilterTenant').value;
+  var status = document.getElementById('propFilterStatus').value;
+  var type = document.getElementById('propFilterType').value;
+  var search = document.getElementById('propFilterSearch').value.trim();
+  if (tenant) params.set('tenant_id', tenant);
+  if (status) params.set('status', status);
+  if (type) params.set('type', type);
+  if (search) params.set('search', search);
+
+  try {
+    var d = await api('/api/admin/db/properties?' + params.toString());
+    document.getElementById('propsCount').textContent = d.total + ' resultats (page ' + d.page + '/' + d.totalPages + ')';
+    document.getElementById('propsTitle').textContent = tenant ? 'Proprietes — ' + tenant : 'Toutes les proprietes';
+
+    if (!d.rows || d.rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="icon">&#128194;</div><h3>Aucun resultat</h3><p>Changez les filtres ou importez des donnees</p></div></td></tr>';
+      document.getElementById('propsPagination').innerHTML = '';
+      return;
+    }
+
+    tbody.innerHTML = d.rows.map(function(r, idx) {
+      var rowId = 'prop-detail-' + idx;
+      return '<tr class="row-expandable" onclick="toggleDetail(\'' + rowId + '\')">' +
+        '<td class="text-muted">&#9654;</td>' +
+        '<td class="mono fw-700">' + esc(r.id_unique) + '</td>' +
+        '<td><span class="tenant-pill" style="font-size:10px;padding:2px 8px">' + esc(r.tenant_id) + '</span></td>' +
+        '<td>' + esc(r.type || '--') + '</td>' +
+        '<td>' + esc(r.transaction || '--') + '</td>' +
+        '<td>' + statusTag(r.statut) + '</td>' +
+        '<td class="fw-700">' + fmtPrice(r.prix) + '</td>' +
+        '<td>' + (r.surface_m2 != null ? r.surface_m2 + ' m\u00B2' : '--') + '</td>' +
+        '<td>' + esc(r.ville || '--') + (r.code_postal ? ' ' + esc(r.code_postal) : '') + '</td>' +
+        '<td class="truncate text-muted text-xs">' + esc(r.title || '--') + '</td>' +
+        '<td style="text-align:right"><button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteProperty(\'' + esc(r.tenant_id) + '\',\'' + esc(r.id_unique) + '\')">&#128465;</button></td>' +
+      '</tr>' +
+      '<tr class="detail-row" id="' + rowId + '" style="display:none"><td colspan="11"><div class="detail-grid">' +
+        detailCell('Reference', r.id_unique) +
+        detailCell('Tenant', r.tenant_id) +
+        detailCell('Type', r.type) +
+        detailCell('Transaction', r.transaction) +
+        detailCell('Statut', r.statut) +
+        detailCell('Prix', fmtPrice(r.prix)) +
+        detailCell('Charges', r.charges != null ? fmtPrice(r.charges) : null) +
+        detailCell('Surface', r.surface_m2 != null ? r.surface_m2 + ' m\u00B2' : null) +
+        detailCell('Pieces', r.pieces) +
+        detailCell('Chambres', r.chambres) +
+        detailCell('Etage', r.floor) +
+        detailCell('Ascenseur', r.elevator != null ? (r.elevator ? 'Oui' : 'Non') : null) +
+        detailCell('Ville', r.ville) +
+        detailCell('Code postal', r.code_postal) +
+        detailCell('Pays', r.country) +
+        detailCell('URL annonce', r.url_annonce) +
+        detailCell('Titre', r.title) +
+        detailCell('Date MAJ', fmtDate(r.date_maj)) +
+        detailCell('Cree le', fmtDate(r.created_at)) +
+        detailCell('Tags', r.tags && r.tags.length > 0 ? r.tags.join(', ') : null) +
+      '</div>' +
+      (r.description ? '<div style="margin-top:8px"><div class="dk">Description</div><div class="dv text-xs" style="margin-top:4px;line-height:1.6;max-height:120px;overflow:auto">' + esc(r.description) + '</div></div>' : '') +
+      (r.flags && Object.keys(r.flags).length > 0 ? '<div style="margin-top:8px"><div class="dk">Flags</div><div class="dv text-mono text-xs">' + esc(JSON.stringify(r.flags)) + '</div></div>' : '') +
+      '</td></tr>';
+    }).join('');
+
+    // Pagination
+    var pagDiv = document.getElementById('propsPagination');
+    var btns = '';
+    if (d.page > 1) btns += '<button class="btn btn-ghost btn-sm" onclick="loadProperties(' + (d.page - 1) + ')">&#9664; Prec</button>';
+    btns += '<span class="page-info">Page ' + d.page + ' / ' + d.totalPages + '</span>';
+    if (d.page < d.totalPages) btns += '<button class="btn btn-ghost btn-sm" onclick="loadProperties(' + (d.page + 1) + ')">Suiv &#9654;</button>';
+    pagDiv.innerHTML = btns;
+
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="icon">&#9888;</div><h3>Erreur</h3><p>' + esc(e.message) + '</p></div></td></tr>';
+    document.getElementById('propsPagination').innerHTML = '';
+  }
+}
+
+function detailCell(label, val) {
+  if (val == null || val === '' || val === '--') return '';
+  return '<div><div class="dk">' + esc(label) + '</div><div class="dv">' + esc(String(val)) + '</div></div>';
+}
+
+function toggleDetail(id) {
+  var row = document.getElementById(id);
+  if (!row) return;
+  var visible = row.style.display !== 'none';
+  row.style.display = visible ? 'none' : 'table-row';
+  // Toggle arrow
+  var prev = row.previousElementSibling;
+  if (prev) {
+    var arrow = prev.querySelector('td:first-child');
+    if (arrow) arrow.innerHTML = visible ? '&#9654;' : '&#9660;';
+  }
+}
+
+async function deleteProperty(tenantId, idUnique) {
+  if (!confirm('Supprimer la propriete ' + idUnique + ' du tenant ' + tenantId + ' ?')) return;
+  try {
+    await api('/api/admin/db/property/' + encodeURIComponent(tenantId) + '/' + encodeURIComponent(idUnique), { method: 'DELETE' });
+    loadProperties(currentPage);
+  } catch(e) {
+    alert('Erreur : ' + e.message);
+  }
+}
+
+// ── Imports Panel ───────────────────────────────────
+async function loadImports() {
+  var tbody = document.getElementById('importsBody');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr>';
+  try {
+    var tenant = document.getElementById('importFilterTenant').value;
+    var url = '/api/admin/db/imports?limit=50';
+    if (tenant) url += '&tenant_id=' + encodeURIComponent(tenant);
+    var d = await api(url);
+    if (!d.runs || d.runs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">&#128230;</div><h3>Aucun import</h3><p>Aucun import XML effectue</p></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.runs.map(function(r) {
+      var modeTag = r.mode === 'commit' ? '<span class="tag tag-ok">COMMIT</span>' : '<span class="tag tag-muted">DRY-RUN</span>';
+      var errTag = r.error_count > 0 ? '<span class="tag tag-warn">' + r.error_count + ' err</span>' : '<span class="text-success text-xs">0</span>';
+      return '<tr>' +
+        '<td class="mono text-xs">' + esc(r.id ? r.id.slice(0,8) + '...' : '--') + '</td>' +
+        '<td><span class="tenant-pill" style="font-size:10px;padding:2px 8px">' + esc(r.tenant_id) + '</span></td>' +
+        '<td>' + modeTag + '</td>' +
+        '<td class="fw-700">' + (r.seen_count || 0) + '</td>' +
+        '<td>' + errTag + '</td>' +
+        '<td class="text-xs">' + fmtDate(r.created_at) + '</td>' +
+        '<td class="text-xs">' + (r.committed_at ? fmtDate(r.committed_at) : '<span class="text-muted">--</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">&#9888;</div><h3>Erreur</h3><p>' + esc(e.message) + '</p></div></td></tr>';
+  }
+}
+
+// ── Conversations Panel ─────────────────────────────
+async function loadConversations() {
+  var convBody = document.getElementById('convsBody');
+  var leadBody = document.getElementById('leadsBody');
+  convBody.innerHTML = '<tr><td colspan="6" class="empty-state"><span class="spinner"></span></td></tr>';
+  leadBody.innerHTML = '<tr><td colspan="6" class="empty-state"><span class="spinner"></span></td></tr>';
+  try {
+    var d = await api('/api/admin/db/conversations?limit=50');
+
+    // Conversations
+    if (!d.conversations || d.conversations.length === 0) {
+      convBody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">&#128172;</div><h3>Aucune conversation</h3></div></td></tr>';
+    } else {
+      convBody.innerHTML = d.conversations.map(function(c) {
+        var stTag = c.status === 'active' ? '<span class="tag tag-ok">active</span>' : c.status === 'completed' ? '<span class="tag tag-info">completed</span>' : '<span class="tag tag-muted">' + esc(c.status) + '</span>';
+        return '<tr>' +
+          '<td class="mono text-xs">' + esc(c.session_id ? c.session_id.slice(0,20) + (c.session_id.length > 20 ? '...' : '') : '--') + '</td>' +
+          '<td><span class="tenant-pill" style="font-size:10px;padding:2px 8px">' + esc(c.tenant_id || 'default') + '</span></td>' +
+          '<td>' + stTag + '</td>' +
+          '<td class="fw-700">' + (c.message_count || 0) + '</td>' +
+          '<td class="text-xs">' + fmtDate(c.created_at) + '</td>' +
+          '<td class="text-xs">' + fmtDate(c.updated_at) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    // Leads
+    if (!d.leads || d.leads.length === 0) {
+      leadBody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">&#128100;</div><h3>Aucun lead</h3></div></td></tr>';
+    } else {
+      leadBody.innerHTML = d.leads.map(function(l) {
+        return '<tr>' +
+          '<td class="mono text-xs">' + esc(l.email || '--') + '</td>' +
+          '<td class="mono text-xs">' + esc(l.phone || '--') + '</td>' +
+          '<td><span class="tenant-pill" style="font-size:10px;padding:2px 8px">' + esc(l.tenant_id || 'default') + '</span></td>' +
+          '<td class="text-xs truncate">' + esc(l.automation_needs || '--') + '</td>' +
+          '<td class="text-xs">' + esc(l.timeline || '--') + '</td>' +
+          '<td class="text-xs">' + fmtDate(l.created_at) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  } catch(e) {
+    convBody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">&#9888;</div><p>' + esc(e.message) + '</p></div></td></tr>';
+    leadBody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><p>' + esc(e.message) + '</p></div></td></tr>';
+  }
+}
+
+// ── Import XML Panel ────────────────────────────────
+async function doImport(mode) {
+  var fileInput = document.getElementById('importFile');
+  var f = fileInput.files && fileInput.files[0];
+  if (!f) { alert('Selectionnez un fichier XML'); return; }
+
+  var tenantId = (document.getElementById('importTenant').value || '').trim();
+  if (!tenantId) { alert('Entrez un tenant_id'); return; }
+
+  if (mode === 'commit' && !confirm('Confirmer le commit en base pour le tenant "' + tenantId + '" ?')) return;
+
+  var alertDiv = document.getElementById('importAlert');
+  var outputDiv = document.getElementById('importOutput');
+  alertDiv.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> Import ' + esc(mode) + ' en cours...</div>';
+  outputDiv.style.display = 'none';
+
+  try {
+    var xmlText = await f.text();
+    var headers = { 'Content-Type': 'application/xml' };
+    var csrfToken = getCookie('csrf_token');
+    if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+    var res = await fetch('/api/admin/catalog/import/' + mode + '?tenant_id=' + encodeURIComponent(tenantId), {
+      method: 'POST',
+      headers: headers,
+      body: xmlText,
+    });
+    var data = await res.json().catch(function() { return { error: 'Reponse invalide' }; });
+    if (!res.ok) throw Object.assign(new Error(data.error || 'Import echoue'), { data: data });
+
+    var tagCls = data.errorCount === 0 ? 'alert-ok' : 'alert-warn';
+    var icon = data.errorCount === 0 ? '&#9989;' : '&#9888;';
+    alertDiv.innerHTML = '<div class="alert ' + tagCls + '">' + icon + ' <b>' + mode.toUpperCase() + ' OK</b> — ' +
+      data.seenCount + ' proprietes vues, ' + data.errorCount + ' erreurs</div>';
+
+    outputDiv.style.display = 'block';
+    outputDiv.textContent = JSON.stringify(data, null, 2);
+
+    if (mode === 'commit') {
+      await loadOverview();
+    }
+  } catch(e) {
+    alertDiv.innerHTML = '<div class="alert alert-err">&#10060; Erreur : ' + esc(e.message) + '</div>';
+    if (e.data) {
+      outputDiv.style.display = 'block';
+      outputDiv.textContent = JSON.stringify(e.data, null, 2);
+    }
+  }
+}
+
+// ── Boot ────────────────────────────────────────────
+checkAuth();
+</script>
+</body>
+</html>

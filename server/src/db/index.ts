@@ -1,14 +1,14 @@
-import { pool } from './pool';
+import { assertDatabaseConnection, pool } from './pool';
 
 export { pool };
 
 export const initDb = async () => {
-    try {
-        const client = await pool.connect();
-        console.log('✅ Connected to Database');
-        client.release();
-    } catch (error) {
-        console.error('❌ Failed to connect to Database:', error);
-        throw error;
+    const connected = await assertDatabaseConnection();
+    if (!connected) {
+        console.error('[db] Database is unavailable; server will start in degraded mode');
+        return false;
     }
+
+    console.log('✅ Connected to Database');
+    return true;
 };

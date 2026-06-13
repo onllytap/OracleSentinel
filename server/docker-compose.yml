@@ -1,0 +1,97 @@
+# ============================================================================
+# AI Agent Factory — Docker Compose Stack
+# ============================================================================
+# Spins up the complete stack: PostgreSQL + AI Agent Factory server.
+#
+# Usage:
+#   docker compose up -d              # Start everything
+#   docker compose up -d --build      # Rebuild and start
+#   docker compose logs -f factory    # Follow factory logs
+#   docker compose down               # Stop everything
+#   docker compose down -v            # Stop + delete database volume
+#
+# Environment:
+#   Copy .env.example to .env and fill in your real values,
+#   or create .env.secrets and merge with .env.example.
+# ============================================================================
+
+services:
+  # ── PostgreSQL Database ──────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent-factory-db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-chatbot}
+
+    ports:
+      - "${DB_PORT:-5432}:5432"
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-chatbot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - factory-net
+
+  # ── AI Agent Factory Server ──────────────────────────────────────────────
+  factory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent-factory-server
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      # Override DATABASE_URL to use the internal Docker network hostname
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-chatbot}
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3001
+
+    ports:
+      - "${FACTORY_PORT:-3001}:3001"
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    networks:
+      - factory-net
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+# ── Volumes ────────────────────────────────────────────────────────────────
+volumes:
+  pgdata:
+    driver: local
+    name: agent-factory-pgdata
+
+# ── Networks ───────────────────────────────────────────────────────────────
+networks:
+  factory-net:
+    driver: bridge
+    name: agent-factory-network

@@ -1,5 +1,5 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
-import { getSiteConfig, buildPaginationUrl, SiteConfig } from '../config/site-config';
+import { getSiteConfig, buildPaginationUrl, SiteConfig, reloadSiteConfig } from '../config/site-config';
 
 // ============================================
 // TYPES
@@ -36,25 +36,39 @@ const CACHE_TTL = 3600 * 1000;
 
 export class PropertyScraperService {
     private static browser: Browser | null = null;
+    private static browserPromise: Promise<Browser> | null = null;
+    private static scrapePromise: Promise<Property[]> | null = null;
     private static config: SiteConfig = getSiteConfig();
 
     /**
      * Reload configuration from .env
      */
     static reloadConfig(): void {
-        this.config = getSiteConfig();
+        this.config = reloadSiteConfig();
         console.log(`🔄 Config reloaded: ${this.config.name}`);
     }
 
     private static async getBrowser(): Promise<Browser> {
-        if (!this.browser) {
+        if (this.browser) {
+            return this.browser;
+        }
+
+        if (!this.browserPromise) {
             console.log('🚀 Launching Puppeteer browser...');
-            this.browser = await puppeteer.launch({
+            this.browserPromise = puppeteer.launch({
                 headless: true,
                 args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
             });
         }
-        return this.browser;
+
+        try {
+            const browser = await this.browserPromise;
+            this.browser = browser;
+            return browser;
+        } catch (error) {
+            this.browserPromise = null;
+            throw error;
+        }
     }
 
     static async closeBrowser(): Promise<void> {
@@ -62,6 +76,7 @@ export class PropertyScraperService {
             await this.browser.close();
             this.browser = null;
         }
+        this.browserPromise = null;
     }
 
     /**
@@ -318,83 +333,114 @@ export class PropertyScraperService {
             return Array.from(propertyCache.values());
         }
 
-        const config = this.config;
-        console.log(`🌐 Scraping ${config.name} (${config.maxPages} pages)`);
-
-        const browser = await this.getBrowser();
-        const page = await browser.newPage();
-        await page.setViewport({ width: 1920, height: 1080 });
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-
-        const allProperties: Property[] = [];
-
-        try {
-            for (let pageNum = 1; pageNum <= config.maxPages; pageNum++) {
-                const listUrl = buildPaginationUrl(config, pageNum);
-                const listings = await this.scrapeListingPage(page, listUrl);
-
-                console.log(`📋 Page ${pageNum}: ${listings.length} listings`);
-                if (listings.length === 0) break;
-
-                // OPTIMIZATION: Only scrape full details for the top 3 properties to save time (3s vs 30s)
-                // For the rest, use the data available on the listing card
-                const detailedLimit = 3;
-
-                // Process first few with details in parallel
-                const detailPromises = listings.slice(0, detailedLimit).map(async (listing) => {
-                    if (!listing.url) return null;
-                    try {
-                        const details = await this.scrapeDetailPage(page, listing.url);
-                        return { ...listing, ...details };
-                    } catch (e) {
-                        return listing; // Fallback to listing data
-                    }
-                });
-
-                const detailedListings = await Promise.all(detailPromises);
-
-                // Combine detailed and basic listings
-                const finalListings = [
-                    ...detailedListings.filter(l => l !== null),
-                    ...listings.slice(detailedLimit)
-                ];
-
-                for (const listing of finalListings) {
-                    if (listing && listing.url) {
-                        // Use details if we have them (from the parallel fetch above), otherwise defaults
-                        const floor = (listing as any).floor || 'Non précisé';
-                        const buildingFloors = (listing as any).buildingFloors || 0;
-                        const features = (listing as any).features || [];
-                        const fullDesc = (listing as any).fullDescription || listing.description || '';
-
-                        const property: Property = {
-                            ref: listing.ref || `gen-${allProperties.length}`,
-                            type: listing.type || 'Bien',
-                            price: listing.price || 0,
-                            priceFormatted: listing.priceFormatted || 'Prix NC',
-                            surface: listing.surface || 0,
-                            rooms: listing.rooms || 0,
-                            bedrooms: listing.bedrooms || 0,
-                            location: listing.location || '',
-                            floor: floor,
-                            buildingFloors: buildingFloors,
-                            description: fullDesc,
-                            url: listing.url,
-                            features: features,
-                            scrapedAt: Date.now()
-                        };
-                        allProperties.push(property);
-                        propertyCache.set(property.ref, property);
-                    }
-                }
-            }
-            lastFullScrape = Date.now();
-            console.log(`📊 Total: ${allProperties.length} properties`);
-        } finally {
-            await page.close();
+        if (this.scrapePromise) {
+            return this.scrapePromise;
         }
 
-        return allProperties;
+        this.scrapePromise = (async () => {
+            const config = this.config;
+            console.log(`🌐 Scraping ${config.name} (${config.maxPages} pages)`);
+
+            const browser = await this.getBrowser();
+            const page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+
+            const allProperties: Property[] = [];
+            const nextCache: Map<string, Property> = new Map();
+
+            try {
+                for (let pageNum = 1; pageNum <= config.maxPages; pageNum++) {
+                    const listUrl = buildPaginationUrl(config, pageNum);
+                    const listings = await this.scrapeListingPage(page, listUrl);
+
+                    console.log(`📋 Page ${pageNum}: ${listings.length} listings`);
+                    if (listings.length === 0) break;
+
+                    // OPTIMIZATION: Only scrape full details for the top 3 properties to save time (3s vs 30s)
+                    // For the rest, use the data available on the listing card
+                    const detailedLimit = 3;
+
+                    // Process first few with details in parallel
+                    const detailedListings = await Promise.all(
+                        listings.slice(0, detailedLimit).map(async (listing) => {
+                            if (!listing.url) return null;
+
+                            const detailPage = await browser.newPage();
+                            await detailPage.setViewport({ width: 1920, height: 1080 });
+                            await detailPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+
+                            try {
+                                const details = await this.scrapeDetailPage(detailPage, listing.url);
+                                return { ...listing, ...details };
+                            } catch (e) {
+                                return listing;
+                            } finally {
+                                try {
+                                    await detailPage.close();
+                                } catch {}
+                            }
+                        })
+                    );
+
+                    const finalListings = [
+                        ...detailedListings.filter(l => l !== null),
+                        ...listings.slice(detailedLimit)
+                    ];
+
+                    for (const listing of finalListings) {
+                        if (listing && listing.url) {
+                            const floor = (listing as any).floor || 'Non précisé';
+                            const buildingFloors = (listing as any).buildingFloors || 0;
+                            const features = (listing as any).features || [];
+                            const fullDesc = (listing as any).fullDescription || listing.description || '';
+
+                            const property: Property = {
+                                ref: listing.ref || `gen-${allProperties.length}`,
+                                type: listing.type || 'Bien',
+                                price: listing.price || 0,
+                                priceFormatted: listing.priceFormatted || 'Prix NC',
+                                surface: listing.surface || 0,
+                                rooms: listing.rooms || 0,
+                                bedrooms: listing.bedrooms || 0,
+                                location: listing.location || '',
+                                floor: floor,
+                                buildingFloors: buildingFloors,
+                                description: fullDesc,
+                                url: listing.url,
+                                features: features,
+                                scrapedAt: Date.now()
+                            };
+                            allProperties.push(property);
+                            nextCache.set(property.ref, property);
+                        }
+                    }
+                }
+                lastFullScrape = Date.now();
+                console.log(`📊 Total: ${allProperties.length} properties`);
+
+                if (nextCache.size > 0) {
+                    propertyCache.clear();
+                    for (const [ref, prop] of nextCache.entries()) {
+                        propertyCache.set(ref, prop);
+                    }
+                }
+            } finally {
+                await page.close();
+            }
+
+            if (allProperties.length === 0 && propertyCache.size > 0) {
+                return Array.from(propertyCache.values());
+            }
+
+            return allProperties;
+        })();
+
+        try {
+            return await this.scrapePromise;
+        } finally {
+            this.scrapePromise = null;
+        }
     }
 
     static getPropertyByRef(ref: string): Property | undefined {

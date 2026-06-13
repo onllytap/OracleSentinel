@@ -1,0 +1,125 @@
+{
+  "id": "garage",
+  "name": "Garage Automobile / Atelier Mécanique",
+  "description": "Profil pour garages, ateliers mécaniques, réseaux type Motrio, Speedy, Midas, etc.",
+  "version": "1.0.0",
+
+  "domain": "garage",
+
+  "requiredFields": [
+    "prenom",
+    "nom",
+    "numero_telephone",
+    "type",
+    "besoin",
+    "adresse"
+  ],
+
+  "scoringRules": {
+    "prenom+nom": 15,
+    "numero_telephone": 20,
+    "email": 10,
+    "type": 15,
+    "besoin": 15,
+    "adresse": 15,
+    "date_rdv": 10
+  },
+
+  "typeEnum": [
+    "Entretien",
+    "Réparation",
+    "Diagnostic",
+    "Pneumatiques",
+    "Carrosserie",
+    "Climatisation",
+    "Freinage",
+    "Embrayage",
+    "Distribution",
+    "Contrôle technique"
+  ],
+
+  "slotHints": {
+    "type": ["entretien", "revision", "révision", "vidange", "panne", "réparation", "reparation", "casse", "diagnostic", "voyant", "controle", "contrôle", "pneu", "pneumatique", "carrosserie", "tôle", "peinture", "clim", "climatisation", "frein", "embrayage", "distribution", "ct", "contrôle technique"],
+    "besoin": ["fap", "dpf", "turbo", "injecteur", "démarreur", "alternateur", "courroie", "amortisseur", "plaquette", "disque", "silent bloc", "cardans", "rotule", "biellette", "bougies", "filtre", "huile", "liquide", "radiateur", "pompe", "joint", "culasse", "sonde", "capteur", "voyant", "allumé", "clignote", "bruit", "vibration", "fumée", "fuite", "perte de puissance", "surchauffe", "calage", "démarre pas"],
+    "adresse": ["ville", "secteur", "quartier", "commune", "département", "à côté de", "près de", "zone"]
+  },
+
+  "questionPlan": [
+    {
+      "field": "besoin",
+      "priority": 1,
+      "question": "Quel est le souci ou l'intervention souhaitée sur votre véhicule ?",
+      "hint": "demander une description du problème ou de l'intervention souhaitée (symptôme, véhicule, kilométrage)"
+    },
+    {
+      "field": "type",
+      "priority": 2,
+      "question": "S'agit-il d'un entretien, d'une réparation, ou d'un diagnostic ?",
+      "hint": "demander le type d'intervention (entretien, réparation, diagnostic, etc.)"
+    },
+    {
+      "field": "prenom",
+      "priority": 3,
+      "question": "Puis-je avoir votre prénom ?",
+      "hint": "demander le prénom du client"
+    },
+    {
+      "field": "nom",
+      "priority": 4,
+      "question": "Et votre nom de famille ?",
+      "hint": "demander le nom de famille"
+    },
+    {
+      "field": "numero_telephone",
+      "priority": 5,
+      "question": "À quel numéro peut-on vous joindre pour le rappel/RDV ?",
+      "hint": "demander le numéro de téléphone pour le rappel/RDV"
+    },
+    {
+      "field": "adresse",
+      "priority": 6,
+      "question": "Dans quelle ville ou secteur êtes-vous situé ?",
+      "hint": "demander la ville ou le secteur du client"
+    },
+    {
+      "field": "date_rdv",
+      "priority": 7,
+      "question": "Souhaitez-vous un créneau particulier pour le rendez-vous atelier ?",
+      "hint": "proposer un créneau de rendez-vous atelier"
+    }
+  ],
+
+  "notesTemplate": "Véhicule: {besoin}\nIntervention: {type}\nLocalisation: {adresse}\nDisponibilité: {date_rdv}\n---\n{notes}",
+
+  "crmTag": "GARAGE",
+
+  "extractionPromptIntro": "Tu es un extracteur de données EXPERT pour CRM garage automobile / atelier mécanique.",
+
+  "besoinLabel": "description du problème ou de l'intervention souhaitée (ex: vidange, freins qui grincent, voyant moteur, révision 60000km)",
+  "adresseLabel": "ville/secteur du client (pour localisation atelier)",
+
+  "extractionExamples": [
+    {
+      "input": "Bonjour, j'ai une Clio 4 diesel 2018, le voyant moteur est allumé et perte de puissance, 06 12 34 56 78, je m'appelle Pierre Durand",
+      "output": {
+        "prenom": "Pierre",
+        "nom": "Durand",
+        "numero_telephone": "0612345678",
+        "type": "Diagnostic",
+        "besoin": "Voyant moteur allumé + perte de puissance - Clio 4 diesel 2018",
+        "adresse": null
+      }
+    },
+    {
+      "input": "Marie Martin, je voudrais faire la vidange de ma 308 à La Roche, 0698765432",
+      "output": {
+        "prenom": "Marie",
+        "nom": "Martin",
+        "numero_telephone": "0698765432",
+        "type": "Entretien",
+        "besoin": "Vidange - Peugeot 308",
+        "adresse": "La Roche"
+      }
+    }
+  ]
+}

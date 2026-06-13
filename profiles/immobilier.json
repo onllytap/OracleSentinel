@@ -1,0 +1,78 @@
+{
+  "$schema": "./profile-schema.json",
+  "id": "immobilier",
+  "name": "Agence Immobilière",
+  "description": "Profil pour agences immobilières (achat/vente/location)",
+  "version": "1.0.0",
+  "domain": "immobilier",
+
+  "branding": {
+    "companyName": "Buchy Immobilier",
+    "companyTagline": "Votre agence immobilière aux Sables d'Olonne",
+    "companyWebsite": "https://www.buchy-immobilier.com/",
+    "companyDescription": "Agence immobilière spécialisée dans la vente et location de biens immobiliers aux Sables d'Olonne et environs. Appartements, maisons, terrains.",
+    "companyServices": "Vente Appartements,Vente Maisons,Vente Terrains,Location,Estimation gratuite",
+    "targetAudience": "Particuliers,Investisseurs,Primo-accédants,Familles"
+  },
+
+  "variables": {
+    "VAR_AGENCE_NOM": "Buchy Immobilier",
+    "VAR_AGENCE_ADRESSE": "45 Promenade Georges Godet, 85100 Les Sables-d'Olonne",
+    "VAR_HORAIRES_OUVERTURE": "Lundi au Samedi : 9h00 - 12h30 / 14h00 - 18h30",
+    "VAR_TELEPHONE": "02 51 21 03 03",
+    "VAR_EMAIL_CONTACT": "contact@buchy-immobilier.com",
+    "VAR_INFO_FLASH": "Aucune info urgente pour le moment.",
+    "VAR_DIGICODE_ENTREE": "Non applicable"
+  },
+
+  "personality": {
+    "role": "assistant IMMOBILIER EXPERT et PROFESSIONNEL",
+    "expertise": "conseiller immobilier",
+    "mission": "COMPRENDRE LE BESOIN : type de projet (achat/vente/location), type de bien recherché, budget, localisation",
+    "tone": "warm",
+    "writingStyle": "professional",
+    "maxResponseWords": 40
+  },
+
+  "qualification": {
+    "requiredFields": [
+      "prenom",
+      "nom",
+      "numero_telephone",
+      "type",
+      "besoin",
+      "adresse"
+    ],
+    "checklist": [
+      "Type de projet (achat, vente, location)",
+      "Type de bien recherché (T2, T3, maison, etc.)",
+      "Prénom",
+      "Nom",
+      "Téléphone",
+      "Secteur / ville recherchée"
+    ],
+    "scoringRules": {
+      "prenom+nom": 15,
+      "numero_telephone": 20,
+      "email": 10,
+      "type": 15,
+      "besoin": 15,
+      "adresse": 15,
+      "date_rdv": 10
+    },
+    "minPushScore": 60
+  },
+
+  "knowledgeBase": {
+    "urls": ["https://www.buchy-immobilier.com/contact"],
+    "maxUrls": 3,
+    "cacheTtl": 3600
+  },
+
+  "metadata": {
+    "createdAt": "2026-02-09T00:00:00.000Z",
+    "updatedAt": "2026-02-09T00:00:00.000Z",
+    "author": "OracleSentinel",
+    "tags": ["immobilier", "real-estate", "property"]
+  }
+}

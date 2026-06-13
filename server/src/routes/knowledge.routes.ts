@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { KnowledgeService } from '../services/knowledge.service';
+import { requireWidgetAuth } from '../middleware/widget-auth';
+import { requireAdminApiKey } from '../middleware/admin-api-key';
 
 const router = Router();
 
@@ -7,7 +9,7 @@ const router = Router();
  * POST /api/knowledge/refresh
  * Force refresh the knowledge cache (admin endpoint)
  */
-router.post('/refresh', async (req, res) => {
+router.post('/refresh', requireAdminApiKey(), async (req, res) => {
     try {
         console.log('🔄 Knowledge cache refresh requested');
         KnowledgeService.clearCache();
@@ -32,7 +34,7 @@ router.post('/refresh', async (req, res) => {
  * GET /api/knowledge/status
  * Get cache status
  */
-router.get('/status', (req, res) => {
+router.get('/status', requireWidgetAuth(['chat:read']), (req, res) => {
     const stats = KnowledgeService.getCacheStats();
     res.json({
         cacheSize: stats.size,

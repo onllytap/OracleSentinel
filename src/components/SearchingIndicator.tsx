@@ -9,7 +9,7 @@ interface SearchingIndicatorProps {
  * Premium Shadcn-style "Searching..." indicator with animated shimmer text.
  * Minimal, elegant, non-intrusive design.
  */
-export function SearchingIndicator({ searchText = "Recherche sur le site" }: SearchingIndicatorProps) {
+export function SearchingIndicator({ searchText = "Thinkings" }: SearchingIndicatorProps) {
     return (
         <div className="flex items-center gap-3 py-2 animate-fade-in">
             {/* Pulsing search icon */}

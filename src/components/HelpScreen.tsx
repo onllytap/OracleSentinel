@@ -397,7 +397,7 @@ export function HelpScreen({ onBack }: HelpScreenProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#1A1A1A] h-full">
+    <div className="h-full flex flex-col bg-[#1A1A1A] overflow-hidden">
       {/* Header with Back Button */}
       <div className="bg-gradient-to-b from-[#5B4FDE] to-[#7C6FE8] px-5 py-6 pb-8">
         <div className="flex items-center justify-between mb-4">
@@ -412,7 +412,7 @@ export function HelpScreen({ onBack }: HelpScreenProps) {
           <h1 className="text-white text-2xl flex-1 text-center">Help</h1>
           <div className="w-9"></div> {/* Spacer for centering */}
         </div>
-        
+
         {/* Search Bar */}
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
@@ -427,7 +427,7 @@ export function HelpScreen({ onBack }: HelpScreenProps) {
       </div>
 
       {/* Help Sections */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {helpSections.map((section) => (
           <div key={section.id} className="border-b border-gray-800">
             <button

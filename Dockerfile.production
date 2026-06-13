@@ -1,0 +1,111 @@
+# ============================================================================
+# OracleSentinel — Full Production Dockerfile
+# ============================================================================
+# Builds both frontend (React/Vite) and backend (Express/TypeScript)
+# into a single container. The backend serves the frontend build.
+#
+# Usage:
+#   docker build -f Dockerfile.production -t oraclesentinel .
+#   docker run --env-file server/.env -p 3001:3001 oraclesentinel
+# ============================================================================
+
+# ── Stage 1: Frontend build ────────────────────────────────────────────────
+FROM node:20-alpine AS frontend
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+
+COPY tsconfig.json vite.config.ts tailwind.config.ts postcss.config.js index.html factory-dashboard.html ./
+COPY src/ ./src/
+COPY public/ ./public/
+
+RUN npm run build
+
+# ── Stage 2: Backend dependencies ──────────────────────────────────────────
+FROM node:20-alpine AS backend-deps
+
+WORKDIR /app/server
+
+COPY server/package.json server/package-lock.json* ./
+RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+
+# ── Stage 3: Backend build (using esbuild for ESM compatibility) ───────────
+FROM node:20-alpine AS backend-build
+
+WORKDIR /app/server
+
+COPY --from=backend-deps /app/server/node_modules ./node_modules
+COPY server/package.json server/tsconfig.json ./
+COPY server/src/ ./src/
+
+# Install esbuild and bundle the server code
+RUN npm install -g esbuild && \
+    esbuild src/index.ts \
+      --bundle \
+      --platform=node \
+      --target=node20 \
+      --format=esm \
+      --outfile=dist/index.js \
+      --external:better-auth \
+      --external:better-auth/* \
+      --external:pg \
+      --external:puppeteer \
+      --external:stripe \
+      --external:groq-sdk \
+      --external:cheerio \
+      --external:fast-xml-parser \
+      --external:jose \
+      --external:zod \
+      --external:multer \
+      --external:dotenv \
+      --external:express \
+      --external:express-rate-limit \
+      --external:cors \
+      --external:helmet \
+      --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);"
+
+# Verify build succeeded
+RUN test -f dist/index.js || (echo "ERROR: Backend compilation failed" && exit 1)
+
+# ── Stage 4: Production image ──────────────────────────────────────────────
+FROM node:20-alpine AS production
+
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+WORKDIR /app
+
+# Production dependencies only
+COPY server/package.json server/package-lock.json* ./
+RUN npm ci --omit=dev --ignore-scripts 2>/dev/null || npm install --omit=dev --ignore-scripts
+
+# Backend bundled JS
+COPY --from=backend-build /app/server/dist ./dist
+
+# Views (factory.html) - copy to both locations for compatibility
+COPY server/src/views/ ./dist/views/
+COPY server/src/views/ ./views/
+
+# DB migrations
+COPY server/src/db/migrations/ ./dist/db/migrations/
+COPY server/src/db/migrations/ ./db/migrations/
+
+# Frontend build (served by Express for /embed, /dashboard, static assets)
+COPY --from=frontend /app/build ./build
+
+# Runtime directories
+RUN mkdir -p /app/data /app/logs /app/uploads && \
+    chown -R appuser:appgroup /app
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+
+USER appuser
+EXPOSE 3001
+
+ENV NODE_ENV=production \
+    PORT=3001
+
+CMD ["node", "dist/index.js"]

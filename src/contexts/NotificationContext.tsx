@@ -18,6 +18,7 @@ type NotificationContextType = {
   clearNotifications: () => void;
   isNotificationsEnabled: boolean;
   toggleNotifications: () => void;
+  playNotificationSound: () => void;
 };
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -37,16 +38,30 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
+  const playNotificationSound = useCallback(() => {
+    if (!isNotificationsEnabled) return;
+    try {
+      const audio = new Audio('/sounds/notification.mp3');
+      audio.volume = 0.375;
+      audio.play().catch(console.error);
+    } catch (e) {
+      console.error('Audio play failed', e);
+    }
+  }, [isNotificationsEnabled]);
+
   const addNotification = useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     if (!isNotificationsEnabled) return;
-    
+
+    // Play sound on notification
+    playNotificationSound();
+
     const newNotification: Notification = {
       ...notification,
       id: Date.now().toString(),
       timestamp: new Date(),
       read: false,
     };
-    
+
     setNotifications(prev => [newNotification, ...prev]);
 
     // Browser notification if permission granted
@@ -56,7 +71,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         icon: '/favicon.ico',
       });
     }
-  }, [isNotificationsEnabled]);
+  }, [isNotificationsEnabled, playNotificationSound]);
 
   const markAsRead = useCallback((id: string) => {
     setNotifications(prev =>
@@ -89,6 +104,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         clearNotifications,
         isNotificationsEnabled,
         toggleNotifications,
+        playNotificationSound,
       }}
     >
       {children}

@@ -1,0 +1,78 @@
+{
+  "$schema": "./profile-schema.json",
+  "id": "restaurant",
+  "name": "Restaurant",
+  "description": "Profil pour restaurants (réservations/événements/privatisation)",
+  "version": "1.0.0",
+  "domain": "generic",
+
+  "branding": {
+    "companyName": "Le Gourmet Vendéen",
+    "companyTagline": "Cuisine traditionnelle et produits locaux",
+    "companyWebsite": "https://www.restaurant-exemple.fr/",
+    "companyDescription": "Restaurant gastronomique proposant une cuisine raffinée à base de produits locaux et de saison.",
+    "companyServices": "Déjeuner,Dîner,Brunch dimanche,Privatisation,Événements,Menu enfants,Menu végétarien",
+    "targetAudience": "Particuliers,Couples,Familles,Groupes,Entreprises"
+  },
+
+  "variables": {
+    "VAR_AGENCE_NOM": "Le Gourmet Vendéen",
+    "VAR_AGENCE_ADRESSE": "12 Rue de la Gastronomie, 85100 Les Sables-d'Olonne",
+    "VAR_HORAIRES_OUVERTURE": "Mardi au Samedi : 12h00 - 14h00 / 19h00 - 22h00 | Dimanche : 12h00 - 15h00 (brunch)",
+    "VAR_TELEPHONE": "02 51 32 45 67",
+    "VAR_EMAIL_CONTACT": "contact@gourmet-vendeen.fr",
+    "VAR_INFO_FLASH": "Menu Saint-Valentin disponible du 10 au 16 février !",
+    "VAR_DIGICODE_ENTREE": "Non applicable"
+  },
+
+  "personality": {
+    "role": "assistant RESTAURATION EXPERT et ACCUEILLANT",
+    "expertise": "conseiller gastronomique",
+    "mission": "COMPRENDRE LE BESOIN : type de réservation (repas/événement/privatisation), nombre de personnes, date souhaitée, préférences alimentaires",
+    "tone": "warm",
+    "writingStyle": "friendly",
+    "maxResponseWords": 40
+  },
+
+  "qualification": {
+    "requiredFields": [
+      "prenom",
+      "nom",
+      "numero_telephone",
+      "type",
+      "besoin",
+      "adresse"
+    ],
+    "checklist": [
+      "Type de réservation (déjeuner, dîner, événement, privatisation)",
+      "Nombre de personnes",
+      "Prénom",
+      "Nom",
+      "Téléphone",
+      "Date souhaitée / horaire"
+    ],
+    "scoringRules": {
+      "prenom+nom": 15,
+      "numero_telephone": 20,
+      "email": 10,
+      "type": 15,
+      "besoin": 15,
+      "adresse": 15,
+      "date_rdv": 10
+    },
+    "minPushScore": 60
+  },
+
+  "knowledgeBase": {
+    "urls": ["https://www.restaurant-exemple.fr/"],
+    "maxUrls": 3,
+    "cacheTtl": 3600
+  },
+
+  "metadata": {
+    "createdAt": "2026-02-09T00:00:00.000Z",
+    "updatedAt": "2026-02-09T00:00:00.000Z",
+    "author": "OracleSentinel",
+    "tags": ["restaurant", "gastronomy", "reservation", "dining"]
+  }
+}

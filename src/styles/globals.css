@@ -25,6 +25,45 @@
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
+/* Mobile Viewport Fix - iOS Safari dynamic address bar */
+:root {
+  --vh-fallback: 1vh;
+  --dvh: 1dvh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --vh-fallback: 1dvh;
+  }
+}
+
+.h-screen-safe {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.min-h-screen-safe {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.max-h-screen-safe {
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+
+.safe-area-top::before {
+  content: '';
+  display: block;
+  height: env(safe-area-inset-top);
+}
+
+.safe-area-bottom::after {
+  content: '';
+  display: block;
+  height: env(safe-area-inset-bottom);
+}
+
 /* Base Typography - Premium Style */
 body {
   font-family: var(--font-sans);

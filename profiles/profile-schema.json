@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OracleSentinel Agent Profile",
+  "description": "Configuration template for an AI agent profile (domain-specific)",
+  "type": "object",
+  "required": ["id", "name", "version", "domain", "branding", "personality", "qualification"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "description": "Unique profile identifier (lowercase, alphanumeric, dashes, underscores)"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable profile name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Profile description and use case"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version (e.g. 1.0.0)"
+    },
+    "domain": {
+      "type": "string",
+      "enum": ["immobilier", "garage", "generic"],
+      "description": "Domain contract to use for qualification"
+    },
+    "branding": {
+      "type": "object",
+      "required": ["companyName", "companyTagline", "companyWebsite", "companyDescription", "companyServices", "targetAudience"],
+      "properties": {
+        "companyName": { "type": "string" },
+        "companyTagline": { "type": "string" },
+        "companyWebsite": { "type": "string", "format": "uri" },
+        "companyDescription": { "type": "string" },
+        "companyServices": { "type": "string" },
+        "targetAudience": { "type": "string" }
+      }
+    },
+    "variables": {
+      "type": "object",
+      "description": "Dynamic variables (VAR_*) injected into prompts",
+      "additionalProperties": { "type": "string" }
+    },
+    "personality": {
+      "type": "object",
+      "required": ["role", "expertise", "mission", "tone", "writingStyle", "maxResponseWords"],
+      "properties": {
+        "role": { "type": "string" },
+        "expertise": { "type": "string" },
+        "mission": { "type": "string" },
+        "tone": {
+          "type": "string",
+          "enum": ["warm", "neutral", "authoritative", "empathetic", "direct"]
+        },
+        "writingStyle": {
+          "type": "string",
+          "enum": ["professional", "friendly", "casual", "formal", "technical"]
+        },
+        "maxResponseWords": { "type": "integer", "minimum": 20, "maximum": 100 }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "required": ["requiredFields", "checklist", "scoringRules", "minPushScore"],
+      "properties": {
+        "requiredFields": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "checklist": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Human-readable qualification checklist for the prompt"
+        },
+        "scoringRules": {
+          "type": "object",
+          "description": "Field name → score mapping",
+          "additionalProperties": { "type": "integer", "minimum": 0, "maximum": 100 }
+        },
+        "minPushScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "knowledgeBase": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" }
+        },
+        "maxUrls": { "type": "integer" },
+        "cacheTtl": { "type": "integer" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "author": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
