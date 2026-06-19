@@ -53,3 +53,44 @@ jobs:
           name: playwright-report
           path: playwright-report/
           if-no-files-found: ignore
+
+  security:
+    name: Snyk security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install server dependencies
+        run: npm ci --prefix server
+
+      # Requires the SNYK_TOKEN repository secret (Settings → Secrets → Actions).
+      # When the secret is absent the step is skipped, so the pipeline stays
+      # green until Snyk is configured; it activates automatically once set.
+      - name: Snyk Open Source (fail on HIGH+)
+        if: ${{ env.SNYK_TOKEN != '' }}
+        uses: snyk/actions/node@master
+        with:
+          args: --severity-threshold=high --all-projects
+
+      - name: Snyk Code SAST (fail on HIGH+)
+        if: ${{ env.SNYK_TOKEN != '' }}
+        uses: snyk/actions/node@master
+        with:
+          command: code test
+          args: --severity-threshold=high

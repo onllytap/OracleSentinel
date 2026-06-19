@@ -1,3 +1,21 @@
+-- ============================================================================
+-- ⚠️  FICHIER LEGACY — NE PAS EXÉCUTER  ⚠️
+-- ============================================================================
+-- Ce fichier est conservé UNIQUEMENT comme référence historique.
+--
+-- DANGER : il contient des `DROP TABLE ... CASCADE` (PERTE DE DONNÉES) et un
+-- schéma OBSOLÈTE, SANS colonne `tenant_id` (régression multi-tenant).
+--
+-- La SOURCE DE VÉRITÉ du schéma est : server/src/db/ensure-db.ts
+--   - idempotent (CREATE TABLE IF NOT EXISTS, ALTER ... IF NOT EXISTS)
+--   - NON destructif (aucun DROP)
+--   - appliqué automatiquement au démarrage du serveur
+--   - ajoute et backfill `tenant_id` sur toutes les tables multi-tenant
+--
+-- N'exécutez JAMAIS ce fichier sur une base contenant des données.
+-- Renommé depuis `schema.sql` le 2026-06-19 (durcissement Phase 1, finding F4).
+-- ============================================================================
+
 -- AI Chat Agent Database Schema
 -- Run this in PostgreSQL (Neon, Supabase, or any Postgres instance)
 

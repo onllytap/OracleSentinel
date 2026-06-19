@@ -1,0 +1,108 @@
+// ============================================================================
+// Command Center (/priv) — Super-Admin Routes
+// ============================================================================
+// Serves the OracleSentinel Command Center page and its protected infra API.
+//
+// Auth model (reuses the project's proven mechanism):
+//   - Page (/priv) loads behind a login gate that posts to POST /api/admin/session
+//     (ADMIN_API_KEY → HttpOnly `admin_session` JWT + `csrf_token`).
+//   - The infra API is hard-gated server-side by requireAdminSession().
+//     No session = 401, regardless of what the client does.
+// ============================================================================
+
+import { Router, Request, Response } from "express";
+import fs from "fs";
+import path from "path";
+import { requireAdminSession } from "../middleware/admin-session";
+import { collectInfraSnapshot } from "../services/infra-monitor.service";
+import { collectFleetSnapshot } from "../services/fleet.service";
+
+// ── Page handler (mirrors factory-ui.routes / admin.routes) ──────────────────
+
+let cachedHtml: string | null = null;
+
+function resolvePrivHtmlPath(): string {
+  const candidates = [
+    path.join(__dirname, "../views/priv.html"),
+    path.join(__dirname, "../../src/views/priv.html"),
+    path.join(__dirname, "../../views/priv.html"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0];
+}
+
+function loadPrivHtml(): string {
+  const isDev = process.env.NODE_ENV !== "production";
+  // Static, non-interpolated error page. The actual error is logged
+  // server-side only — never reflected into the HTTP response (no XSS).
+  const errorHtml =
+    `<!doctype html><meta charset="utf-8"><title>/priv unavailable</title>` +
+    `<body style="font-family:system-ui;background:#050a14;color:#e5e7eb;padding:40px">` +
+    `Command Center temporairement indisponible. Voir les logs serveur.</body>`;
+
+  if (isDev) {
+    const p = resolvePrivHtmlPath();
+    try {
+      return fs.readFileSync(p, "utf-8");
+    } catch (err: any) {
+      console.error("[Command Center] cannot read priv.html:", err?.message);
+      return errorHtml;
+    }
+  }
+  if (cachedHtml !== null) return cachedHtml;
+  const p = resolvePrivHtmlPath();
+  try {
+    cachedHtml = fs.readFileSync(p, "utf-8");
+    return cachedHtml;
+  } catch (err: any) {
+    console.error("[Command Center] cannot read priv.html:", err?.message);
+    return errorHtml;
+  }
+}
+
+export function privPageHandler(_req: Request, res: Response): void {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+  );
+  res.send(loadPrivHtml());
+}
+
+// ── API router ───────────────────────────────────────────────────────────────
+
+const router = Router();
+
+// Live infrastructure snapshot — secrets are masked inside the service layer.
+router.get("/infra", requireAdminSession(), async (_req, res) => {
+  try {
+    const snapshot = await collectInfraSnapshot();
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, ...snapshot });
+  } catch (err: any) {
+    console.error("[Command Center] infra snapshot failed:", err?.message);
+    return res.status(500).json({ success: false, error: "Infra snapshot failed" });
+  }
+});
+
+// Fleet overview — per-agency health + global summary so the super-admin can
+// supervise the whole fleet (350+ agencies) from one screen. Read-only; the
+// service masks/omits all PII & secrets and caches briefly.
+router.get("/overview", requireAdminSession(), async (_req, res) => {
+  try {
+    const fleet = await collectFleetSnapshot();
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, ...fleet });
+  } catch (err: any) {
+    console.error("[Command Center] fleet overview failed:", err?.message);
+    return res
+      .status(500)
+      .json({ success: false, error: "Fleet overview failed" });
+  }
+});
+
+export default router;

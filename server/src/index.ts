@@ -21,6 +21,7 @@ import adminRoutes, { adminPageHandler } from "./routes/admin.routes";
 import crmWebhookRoutes from "./routes/crm-webhook.routes";
 import factoryRoutes from "./routes/factory.routes";
 import factoryPageHandler from "./routes/factory-ui.routes";
+import commandCenterRoutes, { privPageHandler } from "./routes/command-center.routes";
 import { initDb } from "./db";
 import { assertDatabaseConnection } from "./db/pool";
 import { ensureDbSchema } from "./db/ensure-db";
@@ -29,6 +30,20 @@ import { widgetAuthHandler } from "./middleware/widget-auth";
 import { logger } from "./utils/logger";
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+// IPs that bypass rate limiting entirely (comma-separated in RATE_LIMIT_WHITELIST).
+const RATE_LIMIT_WHITELIST = new Set(
+  (process.env.RATE_LIMIT_WHITELIST || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
+
+function isWhitelistedIp(ip: string | undefined): boolean {
+  if (!ip) return false;
+  const normalized = ip.replace(/^::ffff:/, ""); // IPv4-mapped IPv6 → IPv4
+  return RATE_LIMIT_WHITELIST.has(ip) || RATE_LIMIT_WHITELIST.has(normalized);
+}
 
 const parseAllowedOrigins = (): string[] => {
   const raw = process.env.WIDGET_ALLOWED_ORIGINS || "";
@@ -75,6 +90,24 @@ app.use((req, res, next) => {
 });
 
 app.use(cors(corsOptions));
+
+// ── Better Auth (multi-user / 2FA upgrade path for /priv) ───────────────────
+// Mounted BEFORE express.json() because Better Auth consumes the raw body.
+// Guarded so a missing secret or unmigrated DB never breaks server startup.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { toNodeHandler } = require("better-auth/node");
+  const { auth, isBetterAuthConfigured } = require("./auth/auth");
+  if (isBetterAuthConfigured) {
+    app.all("/api/auth/*", toNodeHandler(auth));
+    logger.info("Better Auth mounted at /api/auth/*");
+  } else {
+    logger.warn("Better Auth not mounted: BETTER_AUTH_SECRET or DATABASE_URL missing");
+  }
+} catch (err) {
+  logger.warn({ err }, "Better Auth could not be mounted; continuing without it");
+}
+
 app.use(express.json({ limit: "1mb" }));
 
 app.use(
@@ -94,11 +127,17 @@ app.use(
 
 const limiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,
-  max: 100,
+  max: 600,
   message: { error: "Trop de requêtes, veuillez réessayer plus tard." },
   store: createPostgresStore(RATE_LIMIT_WINDOW_MS),
   standardHeaders: true,
   legacyHeaders: false,
+  // Bypass for whitelisted IPs, and for read-only session-gated monitoring
+  // endpoints the Command Center polls (can't be brute-forced).
+  skip: (req) =>
+    isWhitelistedIp(req.ip) ||
+    (req.method === "GET" &&
+      /^\/api\/(priv\/|admin\/(status|db\/))/.test(req.originalUrl)),
 });
 app.use("/api/", limiter);
 
@@ -116,6 +155,12 @@ app.use("/api/admin", adminRoutes);
 // Factory Command Center (agent configuration & build pipeline)
 app.get("/factory", factoryPageHandler);
 app.use("/api/factory", factoryRoutes);
+
+// ── /priv — OracleSentinel Super-Admin Command Center ───────────────────────
+// Page is gated client-side by login; the infra API is hard-gated server-side
+// by requireAdminSession() inside command-center.routes.
+app.get("/priv", privPageHandler);
+app.use("/api/priv", commandCenterRoutes);
 
 const escapeHtml = (value: string): string =>
   value
@@ -137,7 +182,12 @@ const safeWidgetId = (value: unknown): string =>
 
 const requestBaseUrl = (req: express.Request): string => {
   const protocol = req.protocol === "https" ? "https" : "http";
-  return `${protocol}://${req.get("host") || ""}`;
+  const rawHost = req.get("host") || "";
+  // Only allow valid host characters (hostname, optional port, IPv6 brackets).
+  // This strips any attempt to inject markup (e.g. "</script>") via the Host
+  // header before the value is embedded into the /embed page. Prevents XSS.
+  const host = /^[A-Za-z0-9.\-:[\]]{1,255}$/.test(rawHost) ? rawHost : "";
+  return `${protocol}://${host}`;
 };
 
 // Hosted widget embed page — serves the chatbot inside an iframe-friendly page

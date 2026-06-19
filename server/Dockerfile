@@ -31,8 +31,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.json ./
 COPY src/ ./src/
 
-# Compile TypeScript to JavaScript
-RUN npx tsc --build tsconfig.json 2>&1 || true
+# Compile TypeScript to JavaScript.
+# NOTE: do NOT mask tsc errors with "|| true" — a failed compile must fail the build,
+# otherwise partially-compiled / type-unsafe code can ship to production.
+RUN npx tsc --build tsconfig.json
 
 # Verify dist was created
 RUN test -f dist/index.js || (echo "ERROR: TypeScript compilation failed — dist/index.js not found" && exit 1)

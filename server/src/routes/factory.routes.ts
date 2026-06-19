@@ -15,6 +15,10 @@ import { Router } from "express";
 import express from "express";
 import { requireAdminSession, requireCSRF } from "../middleware/admin-session";
 import {
+  isBlockedWebhookHost,
+  resolvesToPrivateAddress,
+} from "../utils/ssrf-guard";
+import {
   loadCurrentConfig,
   saveConfig,
   diffConfigs,
@@ -38,33 +42,6 @@ import {
 } from "../factory/validation";
 
 const router = Router();
-
-function isBlockedWebhookHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host.endsWith(".local") ||
-    host === "::1"
-  ) {
-    return true;
-  }
-
-  const parts = host.split(".").map((part) => Number(part));
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
-    return false;
-  }
-
-  const [a, b] = parts;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168)
-  );
-}
 
 // All factory routes require admin authentication
 router.use(requireAdminSession());
@@ -872,6 +849,15 @@ router.post(
         });
       }
 
+      // Defense against DNS-rebinding / encoded-IP bypass: block if the host
+      // actually resolves to a loopback/private/link-local address.
+      if (await resolvesToPrivateAddress(parsed.hostname)) {
+        return res.json({
+          success: false,
+          error: "Host resolves to a private or non-routable address",
+        });
+      }
+
       // Only allow HTTPS URLs in production
       if (
         process.env.NODE_ENV === "production" &&
@@ -889,6 +875,9 @@ router.post(
         const response = await fetch(parsed.toString(), {
           method: "HEAD",
           signal: controller.signal,
+          // Do NOT follow redirects: a permitted host could otherwise 3xx to an
+          // internal target (e.g. cloud metadata). Treat redirects as the result.
+          redirect: "manual",
           headers: { "User-Agent": "AgentFactory/1.0 ConnectionTest" },
         });
         return res.json({

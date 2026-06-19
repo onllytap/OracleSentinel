@@ -8,6 +8,7 @@ import {
   requireAdminSession,
   generateCSRFToken,
   requireCSRF,
+  resolveAdminSessionSecret,
 } from "../middleware/admin-session";
 import { CatalogImportService } from "../services/catalog-import.service";
 import { pool } from "../db/pool";
@@ -35,6 +36,38 @@ function parseWidgetTenants(): Record<string, string> {
     if (widgetId && tenantId) map[widgetId] = tenantId;
   }
   return map;
+}
+
+// ── Safe env display for the admin overview ─────────────────────────────────
+// Never surface secret-looking values in the admin UI. Values whose key OR
+// content looks sensitive are masked; benign config values are shown (truncated).
+function looksLikeSecretEnv(key: string, value: string): boolean {
+  if (
+    /(secret|token|key|password|passwd|pwd|auth|credential|api[_-]?key|dsn|private|cookie|session)/i.test(
+      key,
+    )
+  ) {
+    return true;
+  }
+  const v = value.trim();
+  if (/^https?:\/\//i.test(v)) {
+    // Plain URLs are not secrets — mask only if credentials are embedded (user:pass@host).
+    return /:\/\/[^/\s]*:[^/\s]*@/.test(v);
+  }
+  if (/:\/\/[^/\s]*:[^/\s]*@/.test(v)) return true; // connection string with credentials
+  if (v.length >= 40 && !/\s/.test(v) && /^[A-Za-z0-9_\-+/=.:]+$/.test(v)) return true; // long opaque token
+  return false;
+}
+
+function maskEnvValue(value: string): string {
+  const v = String(value);
+  if (v.length <= 6) return "••••";
+  return `${v.slice(0, 3)}••••${v.slice(-3)}`;
+}
+
+function displayEnvValue(key: string, rawValue: string): string {
+  if (looksLikeSecretEnv(key, rawValue)) return maskEnvValue(rawValue);
+  return rawValue.length > 80 ? rawValue.slice(0, 77) + "..." : rawValue;
 }
 
 function cookieBaseAttrs() {
@@ -72,10 +105,7 @@ function clearCookie(res: any, name: string) {
 }
 
 async function signAdminSessionToken(): Promise<string> {
-  const secretRaw =
-    getEnv("ADMIN_SESSION_SECRET") ||
-    getEnv("JWT_SECRET") ||
-    getEnv("ADMIN_API_KEY");
+  const secretRaw = resolveAdminSessionSecret();
   const secret = new TextEncoder().encode(secretRaw);
   return await new SignJWT({ typ: "admin" })
     .setProtectedHeader({ alg: "HS256" })
@@ -340,18 +370,15 @@ router.get("/db/overview", requireAdminSession(), async (_req, res) => {
       .map((key) => {
         const val = process.env[key];
         if (val == null || val === "") return null;
-        // Truncate long values
-        const display = val.length > 80 ? val.slice(0, 77) + "..." : val;
-        return { key, value: display };
+        return { key, value: displayEnvValue(key, val) };
       })
       .filter(Boolean);
 
-    // Also add VAR_* keys
+    // Also add VAR_* keys (values masked when the key or content looks secret)
     for (const key of Object.keys(process.env)) {
       if (key.startsWith("VAR_")) {
         const val = process.env[key] || "";
-        const display = val.length > 80 ? val.slice(0, 77) + "..." : val;
-        envInfo.push({ key, value: display });
+        envInfo.push({ key, value: displayEnvValue(key, val) });
       }
     }
 

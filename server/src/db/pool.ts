@@ -12,7 +12,9 @@ class DatabaseUnavailableError extends Error {
     }
 }
 
-const databaseUrl = process.env.DATABASE_URL;
+// Primary: Neon cloud DB (real production data). Fallback: generic DATABASE_URL.
+const databaseUrl =
+    process.env.NEXT_PRIVATE_DATABASE_URL || process.env.DATABASE_URL;
 
 if (!databaseUrl) {
     console.error('[db] DATABASE_URL is missing. Database features will be unavailable.');
@@ -34,6 +36,12 @@ export const isDatabaseConfigured = Boolean(databaseUrl);
 export const pool = databaseUrl
     ? new Pool({
         connectionString: databaseUrl,
+        // Neon and other managed Postgres require TLS. Enable it whenever the
+        // connection string asks for it (sslmode=require) or targets a non-local host.
+        ssl:
+            /sslmode=require/i.test(databaseUrl) || !/localhost|127\.0\.0\.1/.test(databaseUrl)
+                ? { rejectUnauthorized: false }
+                : undefined,
         max: Number(process.env.DB_POOL_MAX ?? process.env.PG_POOL_MAX ?? 20),
         idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? process.env.PG_IDLE_TIMEOUT_MS ?? 30000),
         connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? process.env.PG_CONNECTION_TIMEOUT_MS ?? 5000),

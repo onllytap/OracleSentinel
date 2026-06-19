@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>OracleSentinel — Command Center</title>
+<style>
+  :root{
+    --bg:#05070f; --bg-2:#0a0e1c; --surface:#0d1426; --surface-2:#111a30;
+    --border:#1c2742; --border-glow:#2a3a63;
+    --text:#e6ebf5; --muted:#7e8bab; --faint:#4b5878;
+    --primary:#5b8cff; --primary-glow:#3b6cff;
+    --ok:#34d399; --warn:#fbbf24; --down:#f87171; --idle:#64748b;
+    --radius:16px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(91,140,255,.10), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(52,211,153,.06), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .hidden{display:none !important}
+
+  /* ── Login gate ───────────────────────────────────────────── */
+  #gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(800px 500px at 50% 0%, rgba(91,140,255,.12), transparent 60%), var(--bg);z-index:50}
+  .gate-card{width:min(92vw,420px);background:linear-gradient(180deg,var(--surface),var(--bg-2));
+    border:1px solid var(--border);border-radius:var(--radius);padding:36px 32px;
+    box-shadow:0 40px 120px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.03)}
+  .brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .brand .mark{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--primary),#7c5bff);box-shadow:0 8px 24px rgba(91,140,255,.4);font-weight:800}
+  .brand h1{font-size:17px;letter-spacing:.3px}
+  .brand span{color:var(--muted);font-size:12px}
+  .gate-card p.sub{color:var(--muted);font-size:13px;margin:14px 0 22px}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:7px;letter-spacing:.3px}
+  input[type=password],input[type=text]{width:100%;background:var(--bg);border:1px solid var(--border);
+    color:var(--text);border-radius:11px;padding:13px 14px;font-size:14px;outline:none;transition:.15s}
+  input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(91,140,255,.15)}
+  button.primary{margin-top:18px;width:100%;background:linear-gradient(135deg,var(--primary),var(--primary-glow));
+    color:#fff;border:none;border-radius:11px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;transition:.15s}
+  button.primary:hover{filter:brightness(1.08)}
+  button.primary:disabled{opacity:.6;cursor:not-allowed}
+  .err{color:var(--down);font-size:12.5px;margin-top:12px;min-height:16px}
+  .lock-note{margin-top:18px;font-size:11px;color:var(--faint);line-height:1.5;border-top:1px solid var(--border);padding-top:14px}
+
+  /* ── App shell ────────────────────────────────────────────── */
+  #app{max-width:1320px;margin:0 auto;padding:22px 22px 60px}
+  header.topbar{display:flex;align-items:center;gap:16px;padding:14px 18px;margin-bottom:22px;
+    background:linear-gradient(180deg,rgba(17,26,48,.7),rgba(13,20,38,.55));
+    border:1px solid var(--border);border-radius:var(--radius);backdrop-filter:blur(8px)}
+  .topbar .mark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--primary),#7c5bff);font-weight:800;font-size:13px}
+  .topbar h2{font-size:15px;letter-spacing:.2px}
+  .topbar .env{font-size:11px;color:var(--muted)}
+  .spacer{flex:1}
+  .pill{font-size:11px;padding:5px 11px;border-radius:999px;border:1px solid var(--border);color:var(--muted);
+    display:inline-flex;align-items:center;gap:6px}
+  .pill .dot{width:7px;height:7px;border-radius:50%}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:10px;
+    padding:8px 13px;font-size:12.5px;cursor:pointer;transition:.15s}
+  .btn-ghost:hover{color:var(--text);border-color:var(--border-glow)}
+
+  /* ── KPI hero ─────────────────────────────────────────────── */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}
+  @media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.kpis{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--surface),var(--bg-2));border:1px solid var(--border);
+    border-radius:var(--radius);padding:18px 20px;position:relative;overflow:hidden}
+  .card::after{content:"";position:absolute;inset:0;border-radius:var(--radius);pointer-events:none;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+  .kpi .lbl{font-size:12px;color:var(--muted);display:flex;align-items:center;justify-content:space-between}
+  .kpi .val{font-size:30px;font-weight:700;margin-top:10px;letter-spacing:-.5px}
+  .kpi .sub{font-size:11.5px;color:var(--faint);margin-top:6px}
+  .kpi .ico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--surface-2);
+    border:1px solid var(--border);font-size:15px}
+
+  /* ── Reactor (health gauge) ───────────────────────────────── */
+  .reactor{display:flex;align-items:center;gap:18px}
+  .gauge{--p:0; width:96px;height:96px;border-radius:50%;flex:none;
+    background:conic-gradient(var(--ok) calc(var(--p)*1%), rgba(255,255,255,.06) 0);
+    display:grid;place-items:center;position:relative;transition:background .6s ease}
+  .gauge::before{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--bg-2);border:1px solid var(--border)}
+  .gauge b{position:relative;font-size:24px;font-weight:800}
+  .gauge small{position:relative;font-size:9px;color:var(--muted);display:block;text-align:center}
+
+  /* ── Service grid ─────────────────────────────────────────── */
+  .section-title{display:flex;align-items:center;gap:10px;margin:26px 4px 14px}
+  .section-title h3{font-size:14px;letter-spacing:.4px;color:var(--text)}
+  .section-title .line{flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:1000px){.grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:620px){.grid{grid-template-columns:1fr}}
+  .svc{background:linear-gradient(180deg,var(--surface),var(--bg-2));border:1px solid var(--border);
+    border-radius:14px;padding:16px 17px;transition:.18s;position:relative}
+  .svc:hover{border-color:var(--border-glow);transform:translateY(-2px);box-shadow:0 14px 40px rgba(0,0,0,.4)}
+  .svc .head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .svc .name{font-size:14.5px;font-weight:600}
+  .svc .cat{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}
+  .status{font-size:10.5px;font-weight:700;padding:5px 9px;border-radius:999px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .status .dot{width:7px;height:7px;border-radius:50%;box-shadow:0 0 8px currentColor}
+  .s-operational{color:var(--ok);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25)}
+  .s-degraded{color:var(--warn);background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25)}
+  .s-down{color:var(--down);background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25)}
+  .s-not_configured{color:var(--idle);background:rgba(100,116,139,.1);border:1px solid rgba(100,116,139,.25)}
+  .svc .endpoint{font-size:11.5px;color:var(--muted);margin-top:12px;word-break:break-all}
+  .svc .purpose{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.5}
+  .svc .meta{display:flex;gap:14px;margin-top:12px;font-size:11px;color:var(--muted)}
+  .svc .meta b{color:var(--text);font-weight:600}
+  .caps{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .cap{font-size:10.5px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);
+    border-radius:7px;padding:3px 8px}
+  .detail{font-size:11px;color:var(--faint);margin-top:11px;border-top:1px dashed var(--border);padding-top:9px}
+  .pulse{animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+  footer.foot{margin-top:30px;text-align:center;color:var(--faint);font-size:11px;line-height:1.7}
+  .skeleton{height:188px;border-radius:14px;background:linear-gradient(100deg,var(--surface) 30%,var(--surface-2) 50%,var(--surface) 70%);
+    background-size:200% 100%;animation:sh 1.3s infinite;border:1px solid var(--border)}
+  @keyframes sh{to{background-position:-200% 0}}
+
+  /* ── Fleet (per-agency) list ──────────────────────────────── */
+  .fleet-head{display:flex;align-items:center;gap:12px;padding:9px 16px;font-size:10.5px;
+    text-transform:uppercase;letter-spacing:.5px;color:var(--faint);background:var(--surface-2)}
+  .fleet-row{display:flex;align-items:center;gap:12px;padding:11px 16px;border-top:1px solid var(--border);font-size:12.5px}
+  .fleet-row .hdot{width:8px;height:8px;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor}
+  .fleet-row .nm{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fleet-head .nm{flex:1}
+  .fleet-row .col,.fleet-head .col{width:62px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  .fleet-row .when,.fleet-head .when{width:104px;text-align:right;color:var(--faint);font-size:11px}
+  .fleet-row .badge{width:64px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.4px}
+  .fleet-head .badge{width:64px;text-align:right}
+  .h-healthy{color:var(--ok)} .h-idle{color:var(--idle)} .h-attention{color:var(--warn)} .h-empty{color:var(--faint)}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN GATE ─────────────────────────────────────────────── -->
+<div id="gate">
+  <form class="gate-card" id="gate-form" autocomplete="off">
+    <div class="brand">
+      <div class="mark">OS</div>
+      <div>
+        <h1>OracleSentinel</h1>
+        <span>Command Center · accès restreint</span>
+      </div>
+    </div>
+    <p class="sub">Zone <b class="mono">/priv</b> — réacteur central. Authentification requise.</p>
+    <label for="key">Clé d'accès super-admin</label>
+    <input id="key" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
+    <button class="primary" type="submit" id="gate-btn">Déverrouiller le bunker</button>
+    <div class="err" id="gate-err"></div>
+    <div class="lock-note">
+      Session HttpOnly signée (JWT, expiration 30&nbsp;min) · protection CSRF double-submit ·
+      comparaison à temps constant. Aucune clé n'est stockée côté navigateur.
+    </div>
+  </form>
+</div>
+
+<!-- ── APP ────────────────────────────────────────────────────── -->
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="mark">OS</div>
+    <div>
+      <h2>OracleSentinel — Command Center</h2>
+      <div class="env">Surveillance infrastructure temps réel</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill" id="env-pill"><span class="dot" style="background:var(--idle)"></span><span id="env-label">—</span></span>
+    <span class="pill" id="clock"></span>
+    <button class="btn-ghost" id="refresh-btn">↻ Rafraîchir</button>
+    <button class="btn-ghost" id="logout-btn">Déconnexion</button>
+  </header>
+
+  <!-- KPI hero -->
+  <div class="kpis">
+    <div class="card kpi">
+      <div class="lbl">Réacteur — santé infra <span class="ico">⚡</span></div>
+      <div class="reactor">
+        <div class="gauge" id="gauge"><b id="gauge-val">--</b></div>
+        <div>
+          <div class="val" id="health-pct" style="font-size:22px">--%</div>
+          <div class="sub" id="health-sub">en attente…</div>
+        </div>
+      </div>
+    </div>
+    <div class="card kpi">
+      <div class="lbl">Services opérationnels <span class="ico">🛰️</span></div>
+      <div class="val"><span id="ops-count">--</span><span style="font-size:16px;color:var(--faint)"> / <span id="ops-total">--</span></span></div>
+      <div class="sub" id="ops-sub">probes actifs sur l'écosystème</div>
+    </div>
+    <div class="card kpi">
+      <div class="lbl">Agences pilotées <span class="ico">🏢</span></div>
+      <div class="val" id="agencies-count">--</div>
+      <div class="sub" id="agencies-sub">flotte de chatbots déployés</div>
+    </div>
+    <div class="card kpi">
+      <div class="lbl">Incidents à traiter <span class="ico">🚨</span></div>
+      <div class="val" id="incidents">--</div>
+      <div class="sub" id="incidents-sub">services dégradés ou hors-ligne</div>
+    </div>
+  </div>
+
+  <div class="section-title">
+    <h3>INFRASTRUCTURE — ÉTAT DES SERVICES</h3>
+    <div class="line"></div>
+    <span class="pill"><span class="dot pulse" style="background:var(--ok)"></span>live</span>
+  </div>
+
+  <div class="grid" id="services">
+    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+  </div>
+
+  <div class="section-title">
+    <h3>FLOTTE — ÉTAT DES AGENCES</h3>
+    <div class="line"></div>
+    <span class="pill" id="fleet-health-pill"><span class="dot" style="background:var(--idle)"></span><span id="fleet-health-label">—</span></span>
+  </div>
+
+  <div class="kpis">
+    <div class="card kpi">
+      <div class="lbl">Agences actives <span class="ico">✅</span></div>
+      <div class="val" id="fleet-active">--</div>
+      <div class="sub">activité &lt; 7 jours</div>
+    </div>
+    <div class="card kpi">
+      <div class="lbl">À surveiller <span class="ico">⚠️</span></div>
+      <div class="val" id="fleet-attention">--</div>
+      <div class="sub">erreurs au dernier import</div>
+    </div>
+    <div class="card kpi">
+      <div class="lbl">En veille <span class="ico">🌙</span></div>
+      <div class="val" id="fleet-idle">--</div>
+      <div class="sub">aucune activité récente</div>
+    </div>
+    <div class="card kpi">
+      <div class="lbl">Sans catalogue <span class="ico">📭</span></div>
+      <div class="val" id="fleet-empty">--</div>
+      <div class="sub">à configurer / importer</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;padding:0;overflow:hidden">
+    <div id="fleet-list"><div class="skeleton" style="height:120px;border:none"></div></div>
+  </div>
+
+  <footer class="foot">
+    OracleSentinel Command Center · les identifiants sont masqués côté serveur, aucune valeur secrète n'est transmise au navigateur.<br/>
+    Dernière synchro : <span id="last-sync" class="mono">—</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var gate = document.getElementById("gate");
+  var app = document.getElementById("app");
+  var gateForm = document.getElementById("gate-form");
+  var gateBtn = document.getElementById("gate-btn");
+  var gateErr = document.getElementById("gate-err");
+  var keyInput = document.getElementById("key");
+  var refreshTimer = null;
+
+  function jfetch(url, opts){
+    opts = opts || {};
+    opts.credentials = "same-origin";
+    opts.headers = Object.assign({ "Accept": "application/json" }, opts.headers || {});
+    return fetch(url, opts);
+  }
+
+  function getCookie(name){
+    var m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
+  // ── Auth ──────────────────────────────────────────────────
+  async function checkSession(){
+    try{
+      var r = await jfetch("/api/admin/status");
+      return r.ok;
+    }catch(e){ return false; }
+  }
+
+  async function login(key){
+    var r = await jfetch("/api/admin/session", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ key: key })
+    });
+    if(!r.ok){
+      var msg = r.status === 401 ? "Clé invalide." :
+                r.status === 503 ? "ADMIN_API_KEY non configurée côté serveur." :
+                "Échec de connexion (" + r.status + ").";
+      throw new Error(msg);
+    }
+  }
+
+  async function logout(){
+    try{
+      await jfetch("/api/admin/logout", {
+        method:"POST",
+        headers:{ "X-CSRF-Token": getCookie("csrf_token") }
+      });
+    }catch(e){}
+    if(refreshTimer) clearInterval(refreshTimer);
+    app.classList.add("hidden");
+    gate.classList.remove("hidden");
+    keyInput.value = "";
+  }
+
+  gateForm.addEventListener("submit", async function(e){
+    e.preventDefault();
+    gateErr.textContent = "";
+    gateBtn.disabled = true;
+    gateBtn.textContent = "Vérification…";
+    try{
+      await login(keyInput.value);
+      enterApp();
+    }catch(err){
+      gateErr.textContent = err.message || "Erreur.";
+    }finally{
+      gateBtn.disabled = false;
+      gateBtn.textContent = "Déverrouiller le bunker";
+    }
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", logout);
+  document.getElementById("refresh-btn").addEventListener("click", refreshAll);
+
+  function refreshAll(){ loadInfra(); loadFleet(); }
+
+  // ── App ───────────────────────────────────────────────────
+  function enterApp(){
+    gate.classList.add("hidden");
+    app.classList.remove("hidden");
+    startClock();
+    refreshAll();
+    if(refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(refreshAll, 20000); // auto-refresh 20s
+  }
+
+  function startClock(){
+    var el = document.getElementById("clock");
+    function tick(){
+      var d = new Date();
+      el.innerHTML = '<span class="dot" style="background:var(--primary)"></span>' +
+        d.toLocaleTimeString("fr-FR");
+    }
+    tick(); setInterval(tick, 1000);
+  }
+
+  function esc(s){
+    return String(s == null ? "" : s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  }
+
+  var STATUS_LABEL = {
+    operational:"OPÉRATIONNEL", degraded:"DÉGRADÉ", down:"HORS-LIGNE", not_configured:"NON CONFIGURÉ"
+  };
+
+  // Safe element builder: text is set via textContent, never innerHTML,
+  // so remote-sourced strings can never be interpreted as markup (no XSS).
+  function mk(tag, cls, text){
+    var n = document.createElement(tag);
+    if(cls) n.className = cls;
+    if(text != null) n.textContent = String(text);
+    return n;
+  }
+
+  function renderServices(list){
+    var host = document.getElementById("services");
+    while(host.firstChild) host.removeChild(host.firstChild);
+    list.forEach(function(s){
+      var lat = s.latencyMs == null ? "—" : (s.latencyMs + " ms");
+
+      var card = mk("div", "svc");
+
+      var head = mk("div", "head");
+      var left = mk("div");
+      left.appendChild(mk("div", "name", s.name));
+      left.appendChild(mk("div", "cat", s.category));
+      var status = mk("span", "status s-" + (s.status || ""));
+      var dot = mk("span", "dot");
+      dot.style.background = "currentColor";
+      status.appendChild(dot);
+      status.appendChild(document.createTextNode(STATUS_LABEL[s.status] || s.status || ""));
+      head.appendChild(left);
+      head.appendChild(status);
+      card.appendChild(head);
+
+      card.appendChild(mk("div", "endpoint mono", s.endpoint));
+      card.appendChild(mk("div", "purpose", s.purpose));
+
+      var meta = mk("div", "meta");
+      var latSpan = mk("span", null, "latence ");
+      latSpan.appendChild(mk("b", null, lat));
+      meta.appendChild(latSpan);
+      card.appendChild(meta);
+
+      var caps = mk("div", "caps");
+      (s.capabilities || []).forEach(function(c){ caps.appendChild(mk("span", "cap", c)); });
+      card.appendChild(caps);
+
+      card.appendChild(mk("div", "detail", s.detail));
+      host.appendChild(card);
+    });
+  }
+
+  function setGauge(pct){
+    var g = document.getElementById("gauge");
+    var color = pct >= 80 ? "var(--ok)" : pct >= 50 ? "var(--warn)" : "var(--down)";
+    g.style.background = "conic-gradient(" + color + " " + pct + "%, rgba(255,255,255,.06) 0)";
+    document.getElementById("gauge-val").textContent = pct;
+    document.getElementById("health-pct").textContent = pct + "%";
+    var label = pct >= 80 ? "écosystème stable" : pct >= 50 ? "vigilance requise" : "incident majeur";
+    document.getElementById("health-sub").textContent = label;
+  }
+
+  async function loadInfra(){
+    try{
+      var r = await jfetch("/api/priv/infra");
+      if(r.status === 401){ return logout(); }
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      var data = await r.json();
+      var sum = data.summary;
+      setGauge(sum.healthScore);
+      document.getElementById("ops-count").textContent = sum.operational;
+      document.getElementById("ops-total").textContent = sum.total;
+      document.getElementById("incidents").textContent = (sum.down + sum.degraded);
+      document.getElementById("incidents-sub").textContent =
+        sum.down + " hors-ligne · " + sum.degraded + " dégradé(s)";
+      document.getElementById("env-label").textContent = data.environment;
+      document.getElementById("env-pill").querySelector(".dot").style.background =
+        sum.down > 0 ? "var(--down)" : sum.degraded > 0 ? "var(--warn)" : "var(--ok)";
+      document.getElementById("last-sync").textContent = new Date(data.generatedAt).toLocaleString("fr-FR");
+      renderServices(data.services);
+    }catch(err){
+      document.getElementById("ops-sub").textContent = "Erreur de synchro : " + err.message;
+    }
+  }
+
+  // ── Fleet (per-agency supervision) ────────────────────────
+  var HEALTH_LABEL = { healthy:"SAIN", idle:"VEILLE", attention:"ALERTE", empty:"VIDE" };
+  var HEALTH_ORDER = { attention:0, empty:1, idle:2, healthy:3 };
+
+  function renderFleet(list){
+    var host = document.getElementById("fleet-list");
+    while(host.firstChild) host.removeChild(host.firstChild);
+    if(!list || !list.length){
+      host.appendChild(mk("div","detail","Aucune agence pour le moment."));
+      return;
+    }
+
+    var head = mk("div","fleet-head");
+    head.appendChild(mk("span","hdot"));
+    head.appendChild(mk("span","nm","Agence"));
+    head.appendChild(mk("span","col","Biens"));
+    head.appendChild(mk("span","col","Conv."));
+    head.appendChild(mk("span","col","Leads"));
+    head.appendChild(mk("span","when","Activité"));
+    head.appendChild(mk("span","badge","État"));
+    host.appendChild(head);
+
+    // Worst-first so the operator sees problems at the top; cap DOM for 350+.
+    var sorted = list.slice().sort(function(a,b){
+      return (HEALTH_ORDER[a.health] - HEALTH_ORDER[b.health]);
+    });
+    var shown = sorted.slice(0, 100);
+    shown.forEach(function(a){
+      var row = mk("div","fleet-row");
+      var dot = mk("span","hdot h-" + (a.health || "idle"));
+      dot.style.background = "currentColor";
+      row.appendChild(dot);
+      row.appendChild(mk("span","nm", a.tenantId));
+      row.appendChild(mk("span","col", a.propertyCount));
+      row.appendChild(mk("span","col", a.conversationCount));
+      row.appendChild(mk("span","col", a.leadCount));
+      row.appendChild(mk("span","when", a.lastActivityAt ? new Date(a.lastActivityAt).toLocaleDateString("fr-FR") : "—"));
+      row.appendChild(mk("span","badge h-" + (a.health || "idle"), HEALTH_LABEL[a.health] || "—"));
+      host.appendChild(row);
+    });
+    if(sorted.length > shown.length){
+      host.appendChild(mk("div","detail","… et " + (sorted.length - shown.length) + " autres agences."));
+    }
+  }
+
+  async function loadFleet(){
+    try{
+      var r = await jfetch("/api/priv/overview");
+      if(r.status === 401){ return logout(); }
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      var data = await r.json();
+      var s = data.summary || {};
+      var h = s.health || {};
+      document.getElementById("agencies-count").textContent = s.agencies != null ? s.agencies : "--";
+      document.getElementById("agencies-sub").textContent =
+        (s.activeAgencies || 0) + " active(s) · " + (s.agencies || 0) + " au total";
+      document.getElementById("fleet-active").textContent = s.activeAgencies != null ? s.activeAgencies : "--";
+      document.getElementById("fleet-attention").textContent = h.attention != null ? h.attention : "--";
+      document.getElementById("fleet-idle").textContent = h.idle != null ? h.idle : "--";
+      document.getElementById("fleet-empty").textContent = h.empty != null ? h.empty : "--";
+      var attention = h.attention || 0;
+      document.getElementById("fleet-health-label").textContent =
+        attention > 0 ? (attention + " à surveiller") : "flotte saine";
+      document.getElementById("fleet-health-pill").querySelector(".dot").style.background =
+        attention > 0 ? "var(--warn)" : "var(--ok)";
+      renderFleet(data.agencies || []);
+    }catch(err){
+      var host = document.getElementById("fleet-list");
+      while(host.firstChild) host.removeChild(host.firstChild);
+      host.appendChild(mk("div","detail","Erreur de synchro flotte : " + err.message));
+    }
+  }
+
+  // ── Boot ──────────────────────────────────────────────────
+  (async function init(){
+    if(await checkSession()){ enterApp(); }
+    else { keyInput.focus(); }
+  })();
+})();
+</script>
+</body>
+</html>

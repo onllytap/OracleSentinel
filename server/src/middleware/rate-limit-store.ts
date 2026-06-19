@@ -10,34 +10,49 @@ export class PostgresRateLimitStore implements Store {
     private windowMs: number;
     private tableName: string = RATE_LIMIT_TABLE;
     private initialized: boolean = false;
+    private initPromise: Promise<void> | null = null;
 
     constructor(windowMs: number) {
         this.windowMs = windowMs;
-        this.initTable();
+        void this.initTable();
     }
 
     private async initTable(): Promise<void> {
         if (this.initialized) return;
-        
-        try {
-            await pool.query(`
-                CREATE TABLE IF NOT EXISTS ${this.tableName} (
-                    key VARCHAR(255) PRIMARY KEY,
-                    hits INTEGER NOT NULL DEFAULT 0,
-                    reset_at TIMESTAMP NOT NULL
-                )
-            `);
-            
-            await pool.query(`
-                CREATE INDEX IF NOT EXISTS ${RATE_LIMIT_INDEX} 
-                ON ${this.tableName} (reset_at)
-            `);
-            
-            this.initialized = true;
-            log.info('Rate limit table initialized');
-        } catch (error) {
-            log.error({ err: error }, 'Failed to initialize rate limit table');
-        }
+        // Deduplicate concurrent initialization (constructor + init()) so we
+        // don't run CREATE TABLE/INDEX in parallel (causes 23505 races on Neon).
+        if (this.initPromise) return this.initPromise;
+
+        this.initPromise = (async () => {
+            try {
+                await pool.query(`
+                    CREATE TABLE IF NOT EXISTS ${this.tableName} (
+                        key VARCHAR(255) PRIMARY KEY,
+                        hits INTEGER NOT NULL DEFAULT 0,
+                        reset_at TIMESTAMP NOT NULL
+                    )
+                `);
+
+                await pool.query(`
+                    CREATE INDEX IF NOT EXISTS ${RATE_LIMIT_INDEX}
+                    ON ${this.tableName} (reset_at)
+                `);
+
+                this.initialized = true;
+                log.info('Rate limit table initialized');
+            } catch (error: any) {
+                // 23505 = duplicate object created concurrently — already exists, safe to ignore.
+                if (error?.code === '23505') {
+                    this.initialized = true;
+                } else {
+                    log.error({ err: error }, 'Failed to initialize rate limit table');
+                }
+            } finally {
+                this.initPromise = null;
+            }
+        })();
+
+        return this.initPromise;
     }
 
     async init(_options: Options): Promise<void> {
