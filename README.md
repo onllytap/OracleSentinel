@@ -172,6 +172,23 @@ Ne jamais committer de valeurs réelles. Les fichiers `.env`, `.env.backup.*` et
 
 ---
 
+## Flux principal (du visiteur au lead)
+
+1. Le site de l'agence charge le widget, qui obtient un jeton via
+   `GET /api/widget-auth?widget_id=…` (JWT widget, isolé par tenant).
+2. Les messages transitent par `POST /api/chat` (Bearer JWT). Le bot répond via
+   le LLM (Groq) et, si `RAG_ENABLED`, s'appuie sur le catalogue et la base de
+   connaissances de l'agence.
+3. La conversation qualifie le prospect (score). Au-delà de `CRM_MIN_PUSH_SCORE`,
+   le lead part vers le CRM selon `CRM_PROVIDER` (webhook Airtable ou API Twenty).
+4. Les opérateurs supervisent la flotte et configurent les bots via le QG
+   (voir ci-dessous).
+
+Flux détaillé et modèle de données :
+[`bibliotheque/architecture/ARCHITECTURE.md`](bibliotheque/architecture/ARCHITECTURE.md).
+
+---
+
 ## Surfaces d'administration (le « QG »)
 
 Toutes les surfaces partagent la même authentification : une **session admin**
