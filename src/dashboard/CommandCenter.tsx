@@ -16,6 +16,11 @@ import {
   Search,
   Server,
   ShieldCheck,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
+  ChevronUp,
   Trash2,
   Users,
 } from "lucide-react";
@@ -281,6 +286,111 @@ function fmtDate(v: any): string {
   return v ? new Date(v).toLocaleString("fr-FR") : "—";
 }
 
+// ── Fleet health (per-agency state from /api/priv/overview) ──────────────────
+
+type Health = "healthy" | "idle" | "attention" | "empty";
+
+// Colours per the spec: healthy = vert · attention = orange · idle = gris · empty = neutre.
+const HEALTH_CONFIG: Record<Health, { label: string; badge: string; dot: string }> = {
+  healthy: {
+    label: "Saine",
+    badge: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+    dot: "bg-emerald-500",
+  },
+  attention: {
+    label: "Alerte",
+    badge: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+    dot: "bg-amber-500",
+  },
+  idle: {
+    label: "En veille",
+    badge: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+    dot: "bg-slate-400",
+  },
+  empty: {
+    label: "Sans catalogue",
+    badge: "border-border bg-muted/40 text-muted-foreground",
+    dot: "bg-muted-foreground/40",
+  },
+};
+
+// "Problèmes d'abord" : alerte, puis sans catalogue, puis veille, puis saine.
+const HEALTH_RANK: Record<Health, number> = { attention: 0, empty: 1, idle: 2, healthy: 3 };
+
+const HEALTH_FILTERS: { id: Health | "all"; label: string }[] = [
+  { id: "all", label: "Tous" },
+  { id: "attention", label: "Alerte" },
+  { id: "empty", label: "Sans catalogue" },
+  { id: "idle", label: "En veille" },
+  { id: "healthy", label: "Saines" },
+];
+
+function HealthBadge({ health }: { health?: Health }) {
+  if (!health || !HEALTH_CONFIG[health]) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  const cfg = HEALTH_CONFIG[health];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        cfg.badge,
+      )}
+    >
+      <span className={cn("size-1.5 rounded-full", cfg.dot)} />
+      {cfg.label}
+    </span>
+  );
+}
+
+/** Conversion rate (%) — prefers the server-computed value, falls back to local. */
+function convRate(row: any): number {
+  if (typeof row?.conversionRate === "number") return row.conversionRate;
+  const conv = row?.conversation_count ?? 0;
+  return conv > 0 ? Math.round(((row?.lead_count ?? 0) / conv) * 100) : 0;
+}
+
+/** Most reliable "last activity" timestamp available for a row. */
+function lastActivityOf(row: any): any {
+  return row?.lastActivityAt ?? row?.last_updated ?? null;
+}
+
+type SortState = { key: string; dir: "asc" | "desc" };
+
+/** Sortable, clickable table header cell. */
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  sortKey: string;
+  sort: SortState;
+  onSort: (key: string) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ChevronsUpDown : sort.dir === "asc" ? ChevronUp : ChevronDown;
+  return (
+    <TableHead className={cn(align === "right" && "text-right")}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Trier par ${label}`}
+        className={cn(
+          "inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded",
+          active ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {label}
+        <Icon className={cn("size-3.5", active ? "opacity-100" : "opacity-50")} />
+      </button>
+    </TableHead>
+  );
+}
+
 // ── Overview ─────────────────────────────────────────────────────────────────
 
 function OverviewView({ nonce }: { nonce: number }) {
@@ -464,7 +574,11 @@ function BotDetail({
 
   const conv = bot.conversation_count ?? 0;
   const leads = bot.lead_count ?? 0;
-  const rate = conv > 0 ? Math.round((leads / conv) * 100) : 0;
+  const rate = convRate(bot);
+  const lastImport = bot.lastImportAt ?? bot.last_import;
+  const lastActivity = lastActivityOf(bot);
+  const importErrors: number | undefined =
+    typeof bot.lastImportErrors === "number" ? bot.lastImportErrors : undefined;
 
   const purge = async () => {
     if (!window.confirm(`Purger TOUTES les données du chatbot "${bot.tenant_id}" ? Action irréversible.`)) return;
@@ -493,6 +607,15 @@ function BotDetail({
           <DialogDescription>Fiche chatbot · données live</DialogDescription>
         </DialogHeader>
 
+        {bot.health && (
+          <div className="flex flex-wrap items-center gap-2">
+            <HealthBadge health={bot.health} />
+            <span className="text-xs text-muted-foreground">
+              {bot.active ? "Activité dans les 7 derniers jours" : "Aucune activité récente"}
+            </span>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <Stat label="Conversations" value={conv} />
           <Stat label="Leads" value={leads} />
@@ -517,13 +640,21 @@ function BotDetail({
               )}
             </span>
           </div>
+          {importErrors !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Erreurs au dernier import</span>
+              <span className={cn(importErrors > 0 && "font-medium text-amber-400")}>
+                {importErrors}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Dernier import</span>
-            <span>{fmtDate(bot.last_import)}</span>
+            <span>{fmtDate(lastImport)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Dernière activité</span>
-            <span>{fmtDate(bot.last_updated)}</span>
+            <span>{fmtDate(lastActivity)}</span>
           </div>
         </div>
 
@@ -545,23 +676,60 @@ function BotDetail({
 
 // ── Chatbots ─────────────────────────────────────────────────────────────────
 
+const CHATBOTS_PAGE_SIZE = 25;
+
 function ChatbotsView({ nonce }: { nonce: number }) {
-  const [tenants, setTenants] = useState<any[] | null>(null);
+  const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState("");
+  const [healthUnavailable, setHealthUnavailable] = useState(false);
   const [q, setQ] = useState("");
+  const [healthFilter, setHealthFilter] = useState<Health | "all">("all");
+  const [sort, setSort] = useState<SortState>({ key: "health", dir: "asc" });
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<any | null>(null);
 
   const load = useCallback(() => {
     setErr("");
-    setTenants(null);
-    getJSON("/api/admin/db/tenants")
-      .then((d: any) => setTenants(d.tenants || []))
+    setRows(null);
+    setHealthUnavailable(false);
+    // Base list drives the table + purge (by tenant_id). Health overview is
+    // optional: if it fails the table still renders (graceful degradation).
+    Promise.all([
+      getJSON("/api/admin/db/tenants"),
+      getJSON("/api/priv/overview").catch(() => null),
+    ])
+      .then(([t, ov]: any[]) => {
+        const tenants: any[] = t?.tenants || [];
+        const agencies: any[] = ov?.agencies || [];
+        if (!ov || !Array.isArray(ov.agencies)) setHealthUnavailable(true);
+        const byTenant = new Map<string, any>(agencies.map((a: any) => [a.tenantId, a]));
+        const merged = tenants.map((tt: any) => {
+          const a = byTenant.get(tt.tenant_id);
+          return a
+            ? {
+                ...tt,
+                health: a.health as Health,
+                conversionRate: a.conversionRate,
+                lastImportErrors: a.lastImportErrors,
+                lastImportAt: a.lastImportAt,
+                lastActivityAt: a.lastActivityAt,
+                active: a.active,
+              }
+            : tt;
+        });
+        setRows(merged);
+      })
       .catch((e) => setErr(e?.message || "Erreur"));
   }, []);
 
   useEffect(() => {
     load();
   }, [load, nonce]);
+
+  // Back to first page whenever search / filter / sort changes the result set.
+  useEffect(() => {
+    setPage(1);
+  }, [q, healthFilter, sort]);
 
   const removeBot = async (id: string) => {
     if (!window.confirm(`Supprimer définitivement le chatbot "${id}" et toutes ses données ?`)) return;
@@ -570,16 +738,89 @@ function ChatbotsView({ nonce }: { nonce: number }) {
     else setErr(`Suppression échouée (${res.status})`);
   };
 
+  // Health counts over the whole dataset (drive the filter chips).
+  const healthCounts = useMemo(() => {
+    const c: Record<Health, number> = { healthy: 0, idle: 0, attention: 0, empty: 0 };
+    for (const r of rows || []) {
+      const h = r.health as Health | undefined;
+      if (h && h in c) c[h]++;
+    }
+    return c;
+  }, [rows]);
+
   const filtered = useMemo(() => {
-    if (!tenants) return [];
+    let list = rows || [];
+    if (healthFilter !== "all") list = list.filter((r: any) => r.health === healthFilter);
     const s = q.trim().toLowerCase();
-    if (!s) return tenants;
-    return tenants.filter(
-      (t: any) =>
-        String(t.tenant_id).toLowerCase().includes(s) ||
-        (t.widgetIds || []).some((w: string) => w.toLowerCase().includes(s)),
-    );
-  }, [tenants, q]);
+    if (s) {
+      list = list.filter(
+        (t: any) =>
+          String(t.tenant_id).toLowerCase().includes(s) ||
+          (t.widgetIds || []).some((w: string) => w.toLowerCase().includes(s)),
+      );
+    }
+    return list;
+  }, [rows, q, healthFilter]);
+
+  const sorted = useMemo(() => {
+    const list = [...filtered];
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const val = (r: any): string | number => {
+      switch (sort.key) {
+        case "health":
+          return HEALTH_RANK[r.health as Health] ?? 99;
+        case "tenant":
+          return String(r.tenant_id).toLowerCase();
+        case "properties":
+          return r.property_count ?? 0;
+        case "conversations":
+          return r.conversation_count ?? 0;
+        case "leads":
+          return r.lead_count ?? 0;
+        case "conversion":
+          return convRate(r);
+        case "activity":
+          return new Date(lastActivityOf(r) || 0).getTime();
+        default:
+          return 0;
+      }
+    };
+    list.sort((a, b) => {
+      const av = val(a);
+      const bv = val(b);
+      let cmp =
+        typeof av === "string" || typeof bv === "string"
+          ? String(av).localeCompare(String(bv))
+          : (av as number) - (bv as number);
+      if (cmp !== 0) return cmp * dir;
+      // Tiebreaker: busier agencies first, then name (stable order).
+      const ac = a.conversation_count ?? 0;
+      const bc = b.conversation_count ?? 0;
+      if (ac !== bc) return bc - ac;
+      return String(a.tenant_id).localeCompare(String(b.tenant_id));
+    });
+    return list;
+  }, [filtered, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / CHATBOTS_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = useMemo(
+    () => sorted.slice((safePage - 1) * CHATBOTS_PAGE_SIZE, safePage * CHATBOTS_PAGE_SIZE),
+    [sorted, safePage],
+  );
+
+  const toggleSort = (key: string) =>
+    setSort((s) => {
+      if (s.key === key) return { key, dir: s.dir === "asc" ? "desc" : "asc" };
+      // Defaults: text & health ascending (problems first), numbers descending.
+      const dir: "asc" | "desc" = key === "tenant" || key === "health" ? "asc" : "desc";
+      return { key, dir };
+    });
+
+  const resetFilters = () => {
+    setQ("");
+    setHealthFilter("all");
+  };
 
   return (
     <Card>
@@ -587,7 +828,11 @@ function ChatbotsView({ nonce }: { nonce: number }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <CardTitle className="text-base">Chatbots déployés</CardTitle>
-            <CardDescription>Une ligne par agence — stats live depuis Neon</CardDescription>
+            <CardDescription>
+              {rows
+                ? `${rows.length} agence(s) · santé & stats live`
+                : "Une ligne par agence — stats live depuis Neon"}
+            </CardDescription>
           </div>
           <div className="relative w-64 max-w-full">
             <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -599,79 +844,158 @@ function ChatbotsView({ nonce }: { nonce: number }) {
             />
           </div>
         </div>
+
+        {/* Health filter chips */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {HEALTH_FILTERS.map((f) => {
+            const active = healthFilter === f.id;
+            const count = f.id === "all" ? rows?.length ?? 0 : healthCounts[f.id as Health];
+            const dot = f.id === "all" ? null : HEALTH_CONFIG[f.id as Health]?.dot;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setHealthFilter(f.id)}
+                aria-pressed={active}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                  active
+                    ? "border-primary/40 bg-primary/10 text-foreground"
+                    : "border-border bg-card/40 text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                {dot && <span className={cn("size-1.5 rounded-full", dot)} />}
+                {f.label}
+                <span className="tabular-nums text-muted-foreground">{count}</span>
+              </button>
+            );
+          })}
+        </div>
       </CardHeader>
+
       <CardContent>
+        {healthUnavailable && rows && (
+          <p className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <AlertTriangle className="size-3.5 text-amber-400" />
+            État de santé indisponible (overview hors ligne) — statistiques affichées sans badge.
+          </p>
+        )}
         {err ? (
           <ErrorState message={err} onRetry={load} />
-        ) : !tenants ? (
+        ) : !rows ? (
           <Skeleton className="h-40 w-full rounded-lg" />
-        ) : filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aucun chatbot trouvé.</p>
+        ) : sorted.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+            <Bot className="size-6 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              {rows.length === 0
+                ? "Aucun chatbot déployé."
+                : "Aucun chatbot ne correspond aux filtres."}
+            </p>
+            {rows.length > 0 && (q || healthFilter !== "all") && (
+              <Button variant="outline" size="sm" onClick={resetFilters}>
+                Réinitialiser les filtres
+              </Button>
+            )}
+          </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Chatbot / Agence</TableHead>
-                <TableHead>Widgets</TableHead>
-                <TableHead className="text-right">Biens</TableHead>
-                <TableHead className="text-right">Conv.</TableHead>
-                <TableHead className="text-right">Leads</TableHead>
-                <TableHead className="text-right">Conv. %</TableHead>
-                <TableHead>Dernière activité</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((t: any) => {
-                const conv = t.conversation_count ?? 0;
-                const rate = conv > 0 ? Math.round(((t.lead_count ?? 0) / conv) * 100) : 0;
-                return (
-                  <TableRow
-                    key={t.tenant_id}
-                    className="cursor-pointer"
-                    onClick={() => setSelected(t)}
-                  >
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <span className="flex size-7 items-center justify-center rounded-md bg-primary/15 text-primary">
-                          <Bot className="size-4" />
-                        </span>
-                        {t.tenant_id}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {(t.widgetIds || []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        ) : (
-                          (t.widgetIds || []).slice(0, 3).map((w: string) => (
-                            <Badge key={w} variant="outline" className="font-mono text-[10px]">
-                              {w}
-                            </Badge>
-                          ))
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{t.property_count ?? 0}</TableCell>
-                    <TableCell className="text-right tabular-nums">{conv}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.lead_count ?? 0}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <span className={cn(rate >= 20 ? "text-emerald-400" : rate > 0 ? "text-amber-400" : "text-muted-foreground")}>
-                        {rate}%
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{fmtDate(t.last_updated)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                        <UtilityButton icon={Eye} tooltip="Voir la fiche" onClick={() => setSelected(t)} />
-                        <UtilityButton icon={Trash2} tooltip="Supprimer" tone="danger" onClick={() => removeBot(t.tenant_id)} />
-                      </div>
-                    </TableCell>
+          <>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <SortHeader label="Chatbot / Agence" sortKey="tenant" sort={sort} onSort={toggleSort} />
+                    <SortHeader label="État" sortKey="health" sort={sort} onSort={toggleSort} />
+                    <TableHead>Widgets</TableHead>
+                    <SortHeader label="Biens" sortKey="properties" sort={sort} onSort={toggleSort} align="right" />
+                    <SortHeader label="Conv." sortKey="conversations" sort={sort} onSort={toggleSort} align="right" />
+                    <SortHeader label="Leads" sortKey="leads" sort={sort} onSort={toggleSort} align="right" />
+                    <SortHeader label="Conv. %" sortKey="conversion" sort={sort} onSort={toggleSort} align="right" />
+                    <SortHeader label="Dernière activité" sortKey="activity" sort={sort} onSort={toggleSort} />
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                </TableHeader>
+                <TableBody>
+                  {paged.map((t: any) => {
+                    const conv = t.conversation_count ?? 0;
+                    const rate = convRate(t);
+                    return (
+                      <TableRow key={t.tenant_id} className="cursor-pointer" onClick={() => setSelected(t)}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <span className="flex size-7 items-center justify-center rounded-md bg-primary/15 text-primary">
+                              <Bot className="size-4" />
+                            </span>
+                            {t.tenant_id}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <HealthBadge health={t.health} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {(t.widgetIds || []).length === 0 ? (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            ) : (
+                              (t.widgetIds || []).slice(0, 3).map((w: string) => (
+                                <Badge key={w} variant="outline" className="font-mono text-[10px]">
+                                  {w}
+                                </Badge>
+                              ))
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{t.property_count ?? 0}</TableCell>
+                        <TableCell className="text-right tabular-nums">{conv}</TableCell>
+                        <TableCell className="text-right tabular-nums">{t.lead_count ?? 0}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          <span className={cn(rate >= 20 ? "text-emerald-400" : rate > 0 ? "text-amber-400" : "text-muted-foreground")}>
+                            {rate}%
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{fmtDate(lastActivityOf(t))}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                            <UtilityButton icon={Eye} tooltip="Voir la fiche" onClick={() => setSelected(t)} />
+                            <UtilityButton icon={Trash2} tooltip="Supprimer" tone="danger" onClick={() => removeBot(t.tenant_id)} />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Pager — keeps the table fluid at 350+ agencies */}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                {(safePage - 1) * CHATBOTS_PAGE_SIZE + 1}–
+                {Math.min(safePage * CHATBOTS_PAGE_SIZE, sorted.length)} sur {sorted.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                >
+                  <ChevronLeft className="size-4" /> Précédent
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {safePage} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                >
+                  Suivant <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </CardContent>
       <BotDetail bot={selected} onClose={() => setSelected(null)} onDeleted={load} />
