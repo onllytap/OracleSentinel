@@ -72,7 +72,10 @@ function displayEnvValue(key: string, rawValue: string): string {
 
 function cookieBaseAttrs() {
   const secure = process.env.NODE_ENV === "production";
-  const sameSite = "Lax";
+  // Strict: the admin/CSRF cookies are only sent on same-site requests. The
+  // login POST and the QG pages are same-origin, so this hardens CSRF defense
+  // without breaking the flow (a cross-site link to /priv simply re-prompts login).
+  const sameSite = "Strict";
   return { secure, sameSite } as const;
 }
 

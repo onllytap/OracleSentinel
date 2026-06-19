@@ -94,7 +94,7 @@ function isoOrNull(value: unknown): string | null {
   return ms > 0 ? new Date(ms).toISOString() : null;
 }
 
-function deriveHealth(a: {
+export function deriveHealth(a: {
   propertyCount: number;
   lastImportErrors: number;
   active: boolean;

@@ -14,7 +14,8 @@
 | 1 | Agrégateur backend `GET /api/priv/overview` (résumé flotte + santé par agence + cache) — `services/fleet.service.ts`, `routes/command-center.routes.ts` | ✅ Livré (build OK) |
 | 1b | Page servie `/priv` (`views/priv.html`) : KPI « 350 » codé en dur remplacé par le nombre réel d'agences + section « État des agences » (santé : sain/veille/alerte/vide), XSS-safe | ✅ Livré |
 | 2 | Servir le QG React (`CommandCenter.tsx`) en production via le backend (static + route) | ✅ Livré — route `/qg` (build vérifié) |
-| 3 | Onglet « Bots/Agences » du QG React consommant `/api/priv/overview` (drill-down, recherche, pagination 350) | ⏳ Proposé |
+| 3 | QG React : carte « Santé de la flotte » (Overview) via `/api/priv/overview` (saines/à surveiller/veille/sans catalogue) | ✅ Livré (étape 3a) |
+| 3b | Onglet « Chatbots » enrichi : badge santé par agence, tri/recherche/pagination pour 350+ | ⏳ Proposé |
 
 ### Implémentation étape 2
 `server/src/index.ts` sert désormais le Command Center React en production :

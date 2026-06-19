@@ -286,6 +286,7 @@ function fmtDate(v: any): string {
 function OverviewView({ nonce }: { nonce: number }) {
   const [data, setData] = useState<any>(null);
   const [infra, setInfra] = useState<any>(null);
+  const [fleet, setFleet] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -295,10 +296,12 @@ function OverviewView({ nonce }: { nonce: number }) {
     Promise.all([
       getJSON("/api/admin/db/overview"),
       getJSON("/api/priv/infra").catch(() => null),
+      getJSON("/api/priv/overview").catch(() => null),
     ])
-      .then(([o, i]) => {
+      .then(([o, i, f]) => {
         setData(o);
         setInfra(i);
+        setFleet(f);
       })
       .catch((e) => setErr(e?.message || "Erreur"))
       .finally(() => setLoading(false));
@@ -358,6 +361,39 @@ function OverviewView({ nonce }: { nonce: number }) {
           icon={Activity}
         />
       </div>
+
+      {fleet?.summary?.health && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Santé de la flotte</CardTitle>
+                <CardDescription>
+                  {fleet.summary.activeAgencies ?? 0} agence(s) active(s) sur{" "}
+                  {fleet.summary.agencies ?? 0}
+                </CardDescription>
+              </div>
+              {(fleet.summary.health.attention ?? 0) > 0 ? (
+                <Badge variant="secondary" className="gap-1">
+                  <AlertTriangle className="size-3" />
+                  {fleet.summary.health.attention} à surveiller
+                </Badge>
+              ) : (
+                <Badge variant="default" className="gap-1">
+                  <ShieldCheck className="size-3" />
+                  Flotte saine
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Saines" value={fleet.summary.health.healthy ?? 0} />
+            <Stat label="À surveiller" value={fleet.summary.health.attention ?? 0} />
+            <Stat label="En veille" value={fleet.summary.health.idle ?? 0} />
+            <Stat label="Sans catalogue" value={fleet.summary.health.empty ?? 0} />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">

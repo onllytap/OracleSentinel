@@ -41,13 +41,33 @@ Objectif : corriger les findings sans impact produit (aucune modification de la 
 
 ---
 
-## Reste à faire (validation requise avant action)
+## Phase 1ter — QG flotte + durcissement final (2026-06-19)
 
-Ces findings touchent les données ou nécessitent une décision produit → **non traités** automatiquement :
+| Finding | Action | Fichier(s) | Vérification | Réversible |
+|---|---|---|---|---|
+| **F10** (cookie admin SameSite) | `admin_session` / `csrf_token` passés en `SameSite=Strict` (login + QG same-origin) | `server/src/routes/admin.routes.ts` (`cookieBaseAttrs`) | Build serveur OK ; login same-origin inchangé | Oui (git) |
+| **F6** (tests) | Test unitaire de la classification de santé des agences (`deriveHealth`, 4 cas + précédence) | `server/src/services/__tests__/fleet.service.test.ts` (+ export `deriveHealth`) | `vitest` vert | Oui (git) |
+| **QG étape 3** | Carte « Santé de la flotte » dans le QG React (Overview) via `/api/priv/overview` | `src/dashboard/CommandCenter.tsx` | `vite build` OK | Oui (git) |
 
-- **F5** — Politique de rétention/chiffrement des `.env.backup.*` (secrets au repos).
-- **F8** — Défense en profondeur multi-tenant (RLS PostgreSQL) — voir `decisions/ADR_0003`.
-- **F6** — Tests ciblés des services métier (chat/admin/factory/catalog/CRM).
-- **F10** — Envisager `SameSite=Strict` pour le cookie `admin_session` (à tester pour ne pas casser le login).
+### F5 — Hygiène des sauvegardes `.env.backup.*` (à exécuter par l'opérateur)
+Les backups sont gitignorés (jamais poussés) mais restent en clair sur le disque. Recommandation : conserver les 3 plus récents et supprimer le reste, **après vérification**. Commande PowerShell sûre (à lancer manuellement) :
+
+```powershell
+Get-ChildItem '.env.backup.*' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 3 | Remove-Item -WhatIf
+```
+
+Retirer `-WhatIf` pour exécuter réellement. Idéalement : secrets dans un coffre (VPS : permissions 600, hors arborescence web) + rotation planifiée. Non exécuté ici (suppression = décision opérateur, conforme au handoff).
+
+### F8 — RLS multi-tenant : DIFFÉRÉ volontairement
+Non implémenté dans ce palier : c'est un changement **transverse** (propagation du tenant à chaque connexion) qui peut casser des requêtes légitimes s'il est précipité. `decisions/ADR_0003` impose un **POC en environnement de test** (table `leads`) avant extension. L'isolation applicative actuelle (filtrage `tenant_id` dans toutes les requêtes) reste fonctionnelle et vérifiée. À activer quand le volume / les exigences RGPD le justifient.
+
+---
+
+## Reste à faire (validation / palier ultérieur)
+
+- **F8** — RLS PostgreSQL (POC test d'abord, voir ADR_0003).
+- **F6 (suite)** — Couverture profonde des services métier (chat.service, admin.routes, factory, catalog, connecteurs CRM) — gros chantier à planifier.
+- **F5 (exécution)** — Lancer la purge des backups + mettre les secrets en coffre (décision opérateur).
+- **QG (suite)** — Onglet « Chatbots » du QG React enrichi (badge santé par agence, tri/recherche pour 350+) ; option : unifier `/priv` → QG React.
 
 Voir `SECURITY_REVIEW.md` pour le détail et la priorisation.
