@@ -118,3 +118,16 @@ Toujours additif, frontend-only, dans `src/dashboard/**` :
 ### Vérification
 - `npm run typecheck` : ✅ 0 erreur.
 - `npm run build` : ✅ *built in ~8s*, `build/dashboard.html` + `build/assets/dashboard-*.js|css` régénérés (exit 0).
+
+### Commit & push (améliorations)
+- Commit `da6c9f3` (mes améliorations, 2 fichiers, +141/−22), poussé sur `github/feat/qg-frontend`.
+- ⚠️ Branche instable pendant la session : la HEAD a été rebasculée par un autre flux
+  (vers `feat/data-security-hardening`, puis `docs/onboarding`). À chaque fois, j'ai
+  recommité **uniquement mes 2 fichiers** sur `feat/qg-frontend` (stage par chemin précis).
+- ℹ️ La branche `feat/qg-frontend` contient aussi un commit tiers **non lié à moi** :
+  `6e99c82` « chore(deps): pin wildcard frontend deps » (auteur Théo) — épingle
+  `clsx/motion/tailwind-merge/tailwindcss` dans le `package.json` racine. Inoffensif, mais
+  **à connaître avant le merge vers `main`**. Non modifié par moi.
+- Rappel : le working tree contient des modifs non commitées d'autres flux
+  (`package.json`, `server/src/db/pool.ts`, `server/src/utils/logger.ts`, sous-module
+  `Chatbot`) — **volontairement non stagées**.
