@@ -13,11 +13,18 @@
 |---|---|---|
 | 1 | Agrégateur backend `GET /api/priv/overview` (résumé flotte + santé par agence + cache) — `services/fleet.service.ts`, `routes/command-center.routes.ts` | ✅ Livré (build OK) |
 | 1b | Page servie `/priv` (`views/priv.html`) : KPI « 350 » codé en dur remplacé par le nombre réel d'agences + section « État des agences » (santé : sain/veille/alerte/vide), XSS-safe | ✅ Livré |
-| 2 | Servir le QG React (`CommandCenter.tsx`) en production via le backend (static + route) | ⏳ Proposé (voir « Suite ») |
+| 2 | Servir le QG React (`CommandCenter.tsx`) en production via le backend (static + route) | ✅ Livré — route `/qg` (build vérifié) |
 | 3 | Onglet « Bots/Agences » du QG React consommant `/api/priv/overview` (drill-down, recherche, pagination 350) | ⏳ Proposé |
 
+### Implémentation étape 2
+`server/src/index.ts` sert désormais le Command Center React en production :
+- `express.static(build/, { index:false })` pour les assets hashés (résolution multi-chemins : `../../build` local, `../build` docker full-stack) ;
+- route `GET /qg` → `build/dashboard.html` (CSP adaptée SPA, fallback explicite si `build/` absent) ;
+- `/priv` (page infra+flotte légère) **conservée intacte** comme repli.
+Build vérifié : `tsc` serveur OK + `vite build` OK (`build/dashboard.html` + `build/assets/dashboard-*.js|css`, 3055 modules, 23.8s). Le QG React appelle `/api/admin/*` et `/api/priv/*` en same-origin.
+
 ### Suite recommandée
-Le QG React (`dashboard.html` → `src/dashboard/CommandCenter.tsx`) est plus riche mais **n'est pas servi en production** (`index.ts` n'expose ni `express.static(build)` ni route `/dashboard`). Étape 2 : servir le build React en prod (assets statiques + route dédiée, ex. `/qg`), sans casser `/priv`. À cadrer (URL, CSP) avant implémentation.
+Étape 3 : enrichir l'onglet « Chatbots » du QG React avec `/api/priv/overview` (santé par agence, tri worst-first, recherche/pagination pour 350+). Optionnel : pointer `/priv` vers le QG React si tu veux une URL unique.
 
 
 ## Contexte

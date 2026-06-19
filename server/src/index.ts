@@ -1,5 +1,7 @@
 import "./env";
 import { randomUUID } from "crypto";
+import fs from "fs";
+import path from "path";
 import { getReleaseName, Sentry } from "./monitoring/sentry";
 import express from "express";
 import cors from "cors";
@@ -161,6 +163,68 @@ app.use("/api/factory", factoryRoutes);
 // by requireAdminSession() inside command-center.routes.
 app.get("/priv", privPageHandler);
 app.use("/api/priv", commandCenterRoutes);
+
+// ── /qg — Command Center (React) served in production ───────────────────────
+// The full enterprise dashboard (src/dashboard/CommandCenter.tsx) is built by
+// `npm run build` (repo root) into build/dashboard.html + build/assets/*. We
+// serve those static assets and the page here so the QG is reachable in
+// production. In development use Vite (`npm run dev`, port 3000). The
+// lightweight infra+fleet page at /priv is kept untouched as a fallback.
+const resolveCommandCenterBuildDir = (): string | null => {
+  const candidates = [
+    path.join(__dirname, "../../build"), // local: server/dist|src → repo/build
+    path.join(__dirname, "../build"), // full-stack docker: /app/dist → /app/build
+    path.join(process.cwd(), "build"),
+  ];
+  for (const dir of candidates) {
+    try {
+      if (fs.existsSync(path.join(dir, "dashboard.html"))) return dir;
+    } catch {
+      /* ignore and try next candidate */
+    }
+  }
+  return null;
+};
+const COMMAND_CENTER_BUILD_DIR = resolveCommandCenterBuildDir();
+
+if (COMMAND_CENTER_BUILD_DIR) {
+  // Serve hashed JS/CSS/asset files. index:false so "/" is never auto-served;
+  // static only responds for files that exist, so it never shadows API routes.
+  app.use(
+    express.static(COMMAND_CENTER_BUILD_DIR, { index: false, maxAge: "1h" }),
+  );
+  logger.info(
+    { dir: COMMAND_CENTER_BUILD_DIR },
+    "Command Center (React) build served at /qg",
+  );
+} else {
+  logger.warn(
+    "Command Center build not found; /qg shows a build hint (run `npm run build`)",
+  );
+}
+
+app.get("/qg", (_req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+  );
+  if (!COMMAND_CENTER_BUILD_DIR) {
+    res.status(503);
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(
+      `<!doctype html><meta charset="utf-8"><title>QG — build requis</title>` +
+        `<body style="font-family:system-ui;background:#050a14;color:#e5e7eb;padding:40px;line-height:1.6">` +
+        `<h1 style="color:#5b8cff">Command Center non compilé</h1>` +
+        `<p>Le QG React n'est pas encore build. Lancez à la racine :</p>` +
+        `<pre style="background:#0d1426;border:1px solid #1c2742;padding:14px;border-radius:10px">npm run build</pre>` +
+        `<p>En développement, utilisez Vite (<code>npm run dev</code>, port 3000) ou la page <a href="/priv" style="color:#5b8cff">/priv</a>.</p>` +
+        `</body>`,
+    );
+    return;
+  }
+  res.sendFile(path.join(COMMAND_CENTER_BUILD_DIR, "dashboard.html"));
+});
 
 const escapeHtml = (value: string): string =>
   value

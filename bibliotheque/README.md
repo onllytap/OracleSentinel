@@ -113,7 +113,8 @@ D:\Chatbot - Copy
 | `/api/widget-auth`, `/api/chat`, `/api/leads` | `chat.routes.ts` | JWT widget | Conversation + capture lead |
 | `/api/admin/*`, `/admin` | `admin.routes.ts` | session + CSRF | Vue DB, CRUD catalogue, purge tenant |
 | `/api/factory/*`, `/factory` | `factory.routes.ts`, `factory-ui.routes.ts` | session + CSRF | Config agent, build, tests, knowledge, rollback |
-| `/api/priv/*`, `/priv` | `command-center.routes.ts` | session | Supervision infra temps réel |
+| `/api/priv/*`, `/priv` | `command-center.routes.ts` | session | Supervision infra + **flotte** (`/api/priv/overview` : santé des 350 agences) |
+| `/qg` | `index.ts` + `src/dashboard/` | session | **QG React complet** (Command Center) servi en prod depuis `build/` |
 | `/api/catalog/*` | `catalog.routes.ts` | — | Catalogue |
 | `/api/knowledge/*` | `knowledge.routes.ts` | — | Base de connaissances |
 | `/api/crm/webhook` | `crm-webhook.routes.ts` | — | Webhook CRM entrant |
