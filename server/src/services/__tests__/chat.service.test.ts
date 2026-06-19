@@ -215,7 +215,7 @@ describe("ChatService.processMessage — CRM push gating", () => {
     });
     expect(cdmLead.qualificationScore).toBe(80);
 
-    expect(res.qualification.pushedToCRM).toBe(true);
+    expect(res.qualification!.pushedToCRM).toBe(true);
     expect(findCall(/UPDATE conversations SET status = 'completed'/i)).toBeTruthy();
     expect(findCall(/INSERT INTO leads/i)).toBeTruthy();
   });
@@ -237,7 +237,7 @@ describe("ChatService.processMessage — CRM push gating", () => {
     );
 
     expect(h.pushLead).not.toHaveBeenCalled();
-    expect(res.qualification.pushedToCRM).toBe(false);
+    expect(res.qualification!.pushedToCRM).toBe(false);
   });
 
   it("skips the CRM push when the lead is incomplete despite a high score", async () => {
@@ -297,7 +297,7 @@ describe("ChatService.processMessage — CRM push gating", () => {
     );
 
     expect(h.pushLead).toHaveBeenCalledTimes(1);
-    expect(res.qualification.pushedToCRM).toBe(false);
+    expect(res.qualification!.pushedToCRM).toBe(false);
     expect(findCall(/UPDATE conversations SET status = 'completed'/i)).toBeUndefined();
   });
 });
