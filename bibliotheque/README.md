@@ -162,3 +162,12 @@ Détail complet : `handoff/CHATGPT_LIS_ABSOLUMENT.md`.
 | `ORACLESENTINEL_CONFIG.txt` (racine) | Dump de secrets local (gitignoré). On ne range pas de secrets dans la doc. |
 | `src/**`, `server/**` | Code source : déplacé = builds/imports cassés. Cartographié ci-dessus à la place. |
 | `Chatbot/`, `ai-chat-agent-main/` | Copies/variantes de travail — non documentaires, laissées intactes. |
+
+---
+
+## 7. Liens vers la racine du dépôt
+
+- [`README.md`](../README.md) (racine) — onboarding : pitch, stack, démarrage, variables d'environnement, surfaces du QG, et section « Contribuer / multi-agents ».
+- [`docs/README.md`](../docs/README.md) — pointeur qui renvoie ici (cette bibliothèque reste la source de vérité unique).
+
+> Ces deux fichiers ne dupliquent pas la bibliothèque : ils y renvoient. Toute doc de fond reste ici.
