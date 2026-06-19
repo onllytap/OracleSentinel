@@ -47,6 +47,38 @@ function isWhitelistedIp(ip: string | undefined): boolean {
   return RATE_LIMIT_WHITELIST.has(ip) || RATE_LIMIT_WHITELIST.has(normalized);
 }
 
+// Optional IP allowlist for the admin / super-admin surfaces (defense in depth).
+// EMPTY BY DEFAULT -> NO filtering (zero behaviour change). When ADMIN_IP_ALLOWLIST
+// is set (CSV of IPs), requests to /api/admin and /api/priv from any other IP get
+// a 403. Pairs with `trust proxy` so req.ip reflects the real client behind the
+// reverse proxy in production.
+const ADMIN_IP_ALLOWLIST = new Set(
+  (process.env.ADMIN_IP_ALLOWLIST || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
+
+function adminIpAllowlist() {
+  return (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (ADMIN_IP_ALLOWLIST.size === 0) return next(); // disabled by default
+    const ip = req.ip || "";
+    const normalized = ip.replace(/^::ffff:/, "");
+    if (ADMIN_IP_ALLOWLIST.has(ip) || ADMIN_IP_ALLOWLIST.has(normalized)) {
+      return next();
+    }
+    logger.warn(
+      { ip: normalized, path: req.originalUrl || req.url },
+      "Admin IP allowlist: blocked request",
+    );
+    return res.status(403).json({ error: "Forbidden" });
+  };
+}
+
 const parseAllowedOrigins = (): string[] => {
   const raw = process.env.WIDGET_ALLOWED_ORIGINS || "";
   return raw
@@ -151,8 +183,9 @@ app.use("/api/catalog", catalogRoutes);
 app.use("/api/crm/webhook", crmWebhookRoutes);
 
 // Hidden admin page + admin API (session cookie)
-app.get("/admin", adminPageHandler);
-app.use("/api/admin", adminRoutes);
+// adminIpAllowlist() is a no-op unless ADMIN_IP_ALLOWLIST is configured.
+app.get("/admin", adminIpAllowlist(), adminPageHandler);
+app.use("/api/admin", adminIpAllowlist(), adminRoutes);
 
 // Factory Command Center (agent configuration & build pipeline)
 app.get("/factory", factoryPageHandler);
@@ -161,8 +194,8 @@ app.use("/api/factory", factoryRoutes);
 // ── /priv — OracleSentinel Super-Admin Command Center ───────────────────────
 // Page is gated client-side by login; the infra API is hard-gated server-side
 // by requireAdminSession() inside command-center.routes.
-app.get("/priv", privPageHandler);
-app.use("/api/priv", commandCenterRoutes);
+app.get("/priv", adminIpAllowlist(), privPageHandler);
+app.use("/api/priv", adminIpAllowlist(), commandCenterRoutes);
 
 // ── /qg — Command Center (React) served in production ───────────────────────
 // The full enterprise dashboard (src/dashboard/CommandCenter.tsx) is built by

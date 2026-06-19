@@ -9,28 +9,51 @@ function getEnv(name: string, fallback?: string): string {
 
 // Resolve the secret used to sign/verify the admin-session JWT.
 // Order (unchanged): ADMIN_SESSION_SECRET > JWT_SECRET > ADMIN_API_KEY.
-// In production, warn ONCE if no dedicated secret is configured, or if it is
-// reused from ADMIN_API_KEY — leaking one credential should not compromise the
-// other. Non-blocking: the server keeps working with the fallback.
+// F9 hardened: in PRODUCTION we now REFUSE (throw) rather than warn when the
+// configuration is weak — i.e. no dedicated ADMIN_SESSION_SECRET, or one that
+// equals ADMIN_API_KEY (leaking one credential must not compromise the other).
+// A deployment that already sets a dedicated, distinct secret is unaffected.
+// In development the convenient fallback is kept (warn once) so local work and
+// tests are never blocked.
 let warnedAboutAdminSessionSecret = false;
 export function resolveAdminSessionSecret(): string {
   const dedicated = getEnv('ADMIN_SESSION_SECRET');
   const apiKey = getEnv('ADMIN_API_KEY');
   const secret = dedicated || getEnv('JWT_SECRET') || apiKey;
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  if (process.env.NODE_ENV === 'production' && !warnedAboutAdminSessionSecret) {
+  if (isProduction) {
+    if (!dedicated) {
+      throw new Error(
+        'ADMIN_SESSION_SECRET is required in production: set a dedicated secret, ' +
+          'distinct from ADMIN_API_KEY. Refusing to fall back to JWT_SECRET/ADMIN_API_KEY ' +
+          'for admin-session signing.',
+      );
+    }
+    if (apiKey && dedicated === apiKey) {
+      throw new Error(
+        'ADMIN_SESSION_SECRET must differ from ADMIN_API_KEY in production. ' +
+          'Refusing to reuse the API key as the admin-session signing secret.',
+      );
+    }
+    return secret;
+  }
+
+  // Development only: keep the fallback, warn once.
+  if (!warnedAboutAdminSessionSecret) {
     if (!dedicated) {
       // eslint-disable-next-line no-console
       console.warn(
-        '[security] ADMIN_SESSION_SECRET is not set in production; falling back to ' +
-          'JWT_SECRET/ADMIN_API_KEY. Set a dedicated ADMIN_SESSION_SECRET (distinct from ' +
-          'ADMIN_API_KEY) to isolate admin-session signing.',
+        '[security] ADMIN_SESSION_SECRET is not set; falling back to JWT_SECRET/ADMIN_API_KEY ' +
+          '(dev only — this configuration is REFUSED in production). Set a dedicated ' +
+          'ADMIN_SESSION_SECRET distinct from ADMIN_API_KEY.',
       );
       warnedAboutAdminSessionSecret = true;
     } else if (apiKey && dedicated === apiKey) {
       // eslint-disable-next-line no-console
       console.warn(
-        '[security] ADMIN_SESSION_SECRET equals ADMIN_API_KEY in production; use a distinct value.',
+        '[security] ADMIN_SESSION_SECRET equals ADMIN_API_KEY (dev only — REFUSED in ' +
+          'production); use a distinct value.',
       );
       warnedAboutAdminSessionSecret = true;
     }

@@ -1,0 +1,85 @@
+name: Security Audit
+
+# Additive security assurance (finding F6), separate from ci.yml's Snyk job so
+# the two never collide. Two independent jobs:
+#   - npm-audit : BLOCKING — fails the build on HIGH/CRITICAL dependency vulns.
+#   - gitleaks  : VISIBLE  — scans git history for secrets, reports without
+#                 blocking the pipeline (tighten to blocking once history is
+#                 verified clean).
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm-audit:
+    name: npm audit (fail on HIGH+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Audit root dependencies (fail on high/critical)
+        run: npm audit --audit-level=high
+
+      - name: Audit server dependencies (fail on high/critical)
+        working-directory: server
+        run: npm audit --audit-level=high
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tgz
+          tar -xzf gitleaks.tgz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan repository for secrets
+        # Visible but non-blocking (continue-on-error): surfaces findings via the
+        # step annotation + SARIF artifact without failing the whole pipeline on
+        # historical noise. Secret values are redacted, never printed.
+        continue-on-error: true
+        run: >
+          gitleaks detect
+          --source .
+          --redact
+          --no-banner
+          --report-format sarif
+          --report-path gitleaks.sarif
+          --exit-code 1
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks.sarif
+          if-no-files-found: ignore

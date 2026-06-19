@@ -848,4 +848,115 @@ router.delete(
   },
 );
 
+// ── DELETE /db/lead/:id — RGPD erasure of a single lead (right to be forgotten)
+// Session + CSRF + explicit confirmation. The lead row holds PII (email/phone);
+// with ?cascade=true the linked conversation and its messages (which may also
+// contain PII typed by the visitor) are erased too. Erasure is intentionally
+// PERMANENT (right to erasure). The action is audited WITHOUT logging any PII —
+// only ids + counts. Note: when RLS is enabled (DB_RLS_ENABLED), admin routes
+// like this one must run via withAdminBypass (see server/src/db/rls.ts).
+router.delete(
+  "/db/lead/:id",
+  requireAdminSession(),
+  requireCSRF(),
+  async (req, res) => {
+    const idParam = req.params.id;
+    const id = (Array.isArray(idParam) ? idParam[0] : idParam)?.trim();
+
+    // leads.id is a uuid — reject anything that is not a well-formed uuid.
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!id || !UUID_RE.test(id)) {
+      return res
+        .status(400)
+        .json({ success: false, error: "A valid lead id (uuid) is required" });
+    }
+
+    // Explicit confirmation guards against accidental destructive calls.
+    const confirmBody =
+      req.body?.confirm === true || req.body?.confirm === "true";
+    const confirmQuery = req.query.confirm === "true";
+    if (!confirmBody && !confirmQuery) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'Confirmation required: pass { "confirm": true } in the body or ?confirm=true',
+      });
+    }
+
+    const cascade =
+      req.query.cascade === "true" ||
+      req.body?.cascade === true ||
+      req.body?.cascade === "true";
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Erase the lead row; capture tenant + conversation for audit/cascade.
+      const leadRes = await client.query(
+        `DELETE FROM leads WHERE id = $1 RETURNING tenant_id, conversation_id`,
+        [id],
+      );
+
+      if ((leadRes.rowCount || 0) === 0) {
+        await client.query("ROLLBACK");
+        return res
+          .status(404)
+          .json({ success: false, error: "Lead not found" });
+      }
+
+      const tenantId = leadRes.rows[0].tenant_id as string;
+      const conversationId = leadRes.rows[0].conversation_id as string | null;
+
+      let messagesDeleted = 0;
+      let conversationsDeleted = 0;
+      if (cascade && conversationId) {
+        const msgRes = await client.query(
+          `DELETE FROM messages WHERE conversation_id = $1 AND tenant_id = $2`,
+          [conversationId, tenantId],
+        );
+        messagesDeleted = msgRes.rowCount || 0;
+        const convRes = await client.query(
+          `DELETE FROM conversations WHERE id = $1 AND tenant_id = $2`,
+          [conversationId, tenantId],
+        );
+        conversationsDeleted = convRes.rowCount || 0;
+      }
+
+      await client.query("COMMIT");
+
+      // Audit entry WITHOUT PII (ids + counts only — never email/phone).
+      const audit = {
+        action: "rgpd_lead_erasure",
+        leadId: id,
+        tenantId,
+        cascade,
+        messagesDeleted,
+        conversationsDeleted,
+        at: new Date().toISOString(),
+      };
+      console.log(`[Admin DB][RGPD] Lead erased:`, JSON.stringify(audit));
+
+      return res.json({
+        success: true,
+        message: `Lead ${id} erased`,
+        leadDeleted: 1,
+        cascade,
+        messagesDeleted,
+        conversationsDeleted,
+        tenantId,
+      });
+    } catch (err: any) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("[Admin DB][RGPD] Lead erasure failed:", err.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Lead erasure failed" });
+    } finally {
+      client.release();
+    }
+  },
+);
+
 export default router;

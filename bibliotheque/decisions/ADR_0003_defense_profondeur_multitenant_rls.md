@@ -1,6 +1,6 @@
 # ADR_0003 — Défense en profondeur multi-tenant (Row-Level Security PostgreSQL)
 
-- **Statut** : Proposé (en attente de validation)
+- **Statut** : **Mécanisme livré** (réversible, OFF par défaut) — activation différée (décision opérateur après validation en test). Maj 2026-06-19, branche `feat/data-security-hardening`.
 - **Date** : 2026-06-19
 - **Décideurs** : ingénierie + sécurité
 - **Références** : `bibliotheque/audit/SECURITY_REVIEW.md` (F8), `server/src/db/ensure-db.ts`, `server/src/services/chat.service.ts`
@@ -56,3 +56,51 @@ Introduire la **Row-Level Security (RLS)** PostgreSQL comme **défense en profon
 
 - **Helper de requête imposant le tenant** (plus léger que RLS) : une fonction unique `tenantQuery(tenantId, sql, params)` qui refuse toute requête sur tables multi-tenant sans tenant. Moins robuste que RLS (contournable) mais sans changement base. Peut être une **étape intermédiaire**.
 - **Statu quo** : accepter le risque résiduel (faible aujourd'hui) et le couvrir par des tests + revue de code.
+
+---
+
+## Statut d'implémentation (2026-06-19)
+
+Le **mécanisme** est livré sur la branche `feat/data-security-hardening`,
+**réversible et désactivé par défaut**. L'isolation applicative actuelle reste
+le seul chemin actif tant que `DB_RLS_ENABLED` n'est pas positionné.
+
+**Livré :**
+- `server/src/db/rls.ts` : `withTenant(tenantId, fn)` (transaction +
+  `set_config('app.tenant_id', $1, true)`), `withAdminBypass(fn)`
+  (`set_config('app.bypass_rls','on',true)` pour l'agrégation cross-tenant),
+  `tenantQuery(...)` (point d'intégration : OFF → `pool.query` inchangé ; ON →
+  `withTenant`), `isRlsEnabled()` (lit `DB_RLS_ENABLED`, OFF par défaut),
+  `applyRlsPolicies()` / `removeRlsPolicies()`.
+- `server/src/db/migrations/003_rls_multitenant.sql` (+ `.rollback.sql`) :
+  idempotent, `ENABLE` + `FORCE ROW LEVEL SECURITY` + policy `tenant_isolation`
+  sur les 5 tables multi-tenant. **Non exécuté au boot.**
+- Tests `server/src/db/__tests__/` : `rls.test.ts` (unitaires + intégration
+  réelle prouvant qu'avec RLS, tenant A ≠ tenant B et que l'admin bypass voit
+  tout) et `tenant-isolation.test.ts` (isolation applicative, filet indépendant
+  du flag). Intégration DB exécutée uniquement si `TEST_DATABASE_URL` est défini
+  (jamais la prod).
+
+**Choix de conception :**
+- `FORCE ROW LEVEL SECURITY` pour que la policy s'applique même au rôle
+  propriétaire (isolation effective avec un rôle applicatif partagé). Une
+  connexion sans contexte tenant ni bypass voit **0 ligne** (défaut sûr).
+- `set_config(..., is_local=true)` (transaction-local) : compatible pooling, le
+  contexte est réinitialisé à la fin de la transaction (le bypass ne fuit jamais
+  vers la requête suivante sur la même connexion poolée).
+
+**Plan d'activation** (décision opérateur, en test d'abord) : voir le runbook
+RLS dans `bibliotheque/agents/agent-data-security.md` §4. Résumé : valider en
+test (`TEST_DATABASE_URL` + suite vitest) → appliquer la migration 003 → router
+le chemin widget/chat via `tenantQuery`/`withTenant` et les vues admin via
+`withAdminBypass` → `DB_RLS_ENABLED=true` → valider tous les chemins → puis
+seulement envisager la prod. Rollback : migration `.rollback.sql` + retrait du
+flag.
+
+**Reste à faire pour l'activation** (hors périmètre de cette livraison) :
+- Câbler le chemin widget/chat (`chat.service.ts`, zone équipe chatbot) sur
+  `tenantQuery`/`withTenant`, et les endpoints d'agrégation admin
+  (`admin.routes`, `command-center.routes`, `fleet.service`) sur
+  `withAdminBypass`.
+- Décider du rôle de connexion (propriétaire avec `FORCE`, ou rôle applicatif
+  non-propriétaire dédié au trafic tenant).
