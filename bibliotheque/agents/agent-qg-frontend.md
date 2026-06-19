@@ -98,3 +98,23 @@ Modifications **additives**, dans la zone exclusive `src/dashboard/**` uniquemen
   perdu, aucune autre branche polluée.
 - `git push -u github feat/qg-frontend` : ✅ branche poussée et suivie
   (`github/feat/qg-frontend`). Lien PR fourni par GitHub. **Merge vers `main` = lead humain.**
+
+## Améliorations (polish entreprise) — `src/dashboard/CommandCenter.tsx`
+
+Toujours additif, frontend-only, dans `src/dashboard/**` :
+
+- **Export CSV** de la liste **filtrée + triée** (pas seulement la page visible) : bouton
+  « CSV » dans l'en-tête, fichier `chatbots-AAAA-MM-JJ.csv`, **BOM UTF-8** (accents OK dans
+  Excel), échappement RFC-4180. Désactivé si aucune ligne.
+- **Sélecteur de taille de page** (25 / 50 / 100) couplé à la pagination ; retour page 1
+  au changement de taille.
+- **Repérage des agences en alerte** : ligne surlignée (`bg-amber-500/[0.06]`) pour
+  `health === "attention"` + nombre d'**erreurs d'import** affiché en ligne sous le badge
+  (si `lastImportErrors > 0`).
+- **Accessibilité** : `aria-sort` (ascending/descending/none) sur les en-têtes triables.
+- **Fraîcheur des données** : heure de génération de l'overview (`generatedAt`) affichée
+  dans la description (« maj HH:MM:SS »).
+
+### Vérification
+- `npm run typecheck` : ✅ 0 erreur.
+- `npm run build` : ✅ *built in ~8s*, `build/dashboard.html` + `build/assets/dashboard-*.js|css` régénérés (exit 0).

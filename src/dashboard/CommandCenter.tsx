@@ -21,6 +21,7 @@ import {
   ChevronRight,
   ChevronsUpDown,
   ChevronUp,
+  Download,
   Trash2,
   Users,
 } from "lucide-react";
@@ -374,7 +375,10 @@ function SortHeader({
   const active = sort.key === sortKey;
   const Icon = !active ? ChevronsUpDown : sort.dir === "asc" ? ChevronUp : ChevronDown;
   return (
-    <TableHead className={cn(align === "right" && "text-right")}>
+    <TableHead
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      className={cn(align === "right" && "text-right")}
+    >
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -676,16 +680,18 @@ function BotDetail({
 
 // ── Chatbots ─────────────────────────────────────────────────────────────────
 
-const CHATBOTS_PAGE_SIZE = 25;
+const CHATBOTS_PAGE_SIZES = [25, 50, 100];
 
 function ChatbotsView({ nonce }: { nonce: number }) {
   const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState("");
   const [healthUnavailable, setHealthUnavailable] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [healthFilter, setHealthFilter] = useState<Health | "all">("all");
   const [sort, setSort] = useState<SortState>({ key: "health", dir: "asc" });
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [selected, setSelected] = useState<any | null>(null);
 
   const load = useCallback(() => {
@@ -702,6 +708,7 @@ function ChatbotsView({ nonce }: { nonce: number }) {
         const tenants: any[] = t?.tenants || [];
         const agencies: any[] = ov?.agencies || [];
         if (!ov || !Array.isArray(ov.agencies)) setHealthUnavailable(true);
+        setGeneratedAt(ov?.generatedAt ?? null);
         const byTenant = new Map<string, any>(agencies.map((a: any) => [a.tenantId, a]));
         const merged = tenants.map((tt: any) => {
           const a = byTenant.get(tt.tenant_id);
@@ -726,10 +733,10 @@ function ChatbotsView({ nonce }: { nonce: number }) {
     load();
   }, [load, nonce]);
 
-  // Back to first page whenever search / filter / sort changes the result set.
+  // Back to first page whenever search / filter / sort / page size changes.
   useEffect(() => {
     setPage(1);
-  }, [q, healthFilter, sort]);
+  }, [q, healthFilter, sort, pageSize]);
 
   const removeBot = async (id: string) => {
     if (!window.confirm(`Supprimer définitivement le chatbot "${id}" et toutes ses données ?`)) return;
@@ -802,11 +809,11 @@ function ChatbotsView({ nonce }: { nonce: number }) {
     return list;
   }, [filtered, sort]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / CHATBOTS_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const paged = useMemo(
-    () => sorted.slice((safePage - 1) * CHATBOTS_PAGE_SIZE, safePage * CHATBOTS_PAGE_SIZE),
-    [sorted, safePage],
+    () => sorted.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [sorted, safePage, pageSize],
   );
 
   const toggleSort = (key: string) =>
@@ -822,6 +829,59 @@ function ChatbotsView({ nonce }: { nonce: number }) {
     setHealthFilter("all");
   };
 
+  // Export the currently filtered + sorted list (the full result, not just the page).
+  const exportCsv = () => {
+    const headers = [
+      "tenant_id",
+      "etat",
+      "widgets",
+      "biens",
+      "disponibles",
+      "retires",
+      "conversations",
+      "leads",
+      "taux_conversion_pct",
+      "dernier_import",
+      "erreurs_import",
+      "derniere_activite",
+    ];
+    const esc = (v: any) => {
+      const s = String(v ?? "");
+      return /[",;\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [headers.join(",")];
+    for (const r of sorted) {
+      lines.push(
+        [
+          r.tenant_id,
+          r.health ?? "",
+          (r.widgetIds || []).join("|"),
+          r.property_count ?? 0,
+          r.available ?? 0,
+          r.retired ?? 0,
+          r.conversation_count ?? 0,
+          r.lead_count ?? 0,
+          convRate(r),
+          r.lastImportAt ?? r.last_import ?? "",
+          r.lastImportErrors ?? "",
+          lastActivityOf(r) ?? "",
+        ]
+          .map(esc)
+          .join(","),
+      );
+    }
+    // BOM prefix so Excel reads UTF-8 (accents) correctly.
+    const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chatbots-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -830,18 +890,31 @@ function ChatbotsView({ nonce }: { nonce: number }) {
             <CardTitle className="text-base">Chatbots déployés</CardTitle>
             <CardDescription>
               {rows
-                ? `${rows.length} agence(s) · santé & stats live`
+                ? `${rows.length} agence(s) · santé & stats live${
+                    generatedAt ? ` · maj ${new Date(generatedAt).toLocaleTimeString("fr-FR")}` : ""
+                  }`
                 : "Une ligne par agence — stats live depuis Neon"}
             </CardDescription>
           </div>
-          <div className="relative w-64 max-w-full">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Rechercher un bot / widget…"
-              className="pl-8"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative w-64 max-w-full">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Rechercher un bot / widget…"
+                className="pl-8"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCsv}
+              disabled={!rows || sorted.length === 0}
+              title="Exporter la liste filtrée en CSV"
+            >
+              <Download className="size-4" /> CSV
+            </Button>
           </div>
         </div>
 
@@ -920,7 +993,11 @@ function ChatbotsView({ nonce }: { nonce: number }) {
                     const conv = t.conversation_count ?? 0;
                     const rate = convRate(t);
                     return (
-                      <TableRow key={t.tenant_id} className="cursor-pointer" onClick={() => setSelected(t)}>
+                      <TableRow
+                        key={t.tenant_id}
+                        className={cn("cursor-pointer", t.health === "attention" && "bg-amber-500/[0.06]")}
+                        onClick={() => setSelected(t)}
+                      >
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <span className="flex size-7 items-center justify-center rounded-md bg-primary/15 text-primary">
@@ -930,7 +1007,15 @@ function ChatbotsView({ nonce }: { nonce: number }) {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <HealthBadge health={t.health} />
+                          <div className="flex flex-col items-start gap-0.5">
+                            <HealthBadge health={t.health} />
+                            {t.lastImportErrors > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-400">
+                                <AlertTriangle className="size-3" />
+                                {t.lastImportErrors} err. import
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
@@ -969,10 +1054,24 @@ function ChatbotsView({ nonce }: { nonce: number }) {
 
             {/* Pager — keeps the table fluid at 350+ agencies */}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
-                {(safePage - 1) * CHATBOTS_PAGE_SIZE + 1}–
-                {Math.min(safePage * CHATBOTS_PAGE_SIZE, sorted.length)} sur {sorted.length}
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-muted-foreground">
+                  {(safePage - 1) * pageSize + 1}–
+                  {Math.min(safePage * pageSize, sorted.length)} sur {sorted.length}
+                </p>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  aria-label="Lignes par page"
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  {CHATBOTS_PAGE_SIZES.map((s) => (
+                    <option key={s} value={s}>
+                      {s} / page
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
