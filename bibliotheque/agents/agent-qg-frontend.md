@@ -88,3 +88,13 @@ Modifications **additives**, dans la zone exclusive `src/dashboard/**` uniquemen
   `bibliotheque/agents/agent-qg-frontend.md`.
 - Non stagés volontairement : sous-module `Chatbot`, `server/src/services/__tests__/qualification.service.test.ts`
   (préexistant, hors périmètre).
+
+### Commit & push (final)
+- Commit `9b1b42c` — 2 fichiers, +496/−82.
+- ⚠️ Incident bénin : au moment du commit, le dépôt avait été basculé (hors de mon
+  action) sur `feat/data-security-hardening` ; le commit y a d'abord atterri. Corrigé de
+  façon **non destructive** : `feat/qg-frontend` avancé en fast-forward jusqu'à `9b1b42c`,
+  puis `feat/data-security-hardening` restauré à `b8f12c3` (`git branch -f`). Aucun travail
+  perdu, aucune autre branche polluée.
+- `git push -u github feat/qg-frontend` : ✅ branche poussée et suivie
+  (`github/feat/qg-frontend`). Lien PR fourni par GitHub. **Merge vers `main` = lead humain.**
