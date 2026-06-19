@@ -1,50 +1,54 @@
-# ============================================================================
-# Root .dockerignore — build context for Dockerfile.production (repo root)
-# ============================================================================
-# Dockerfile.production copies only explicit paths (package.json, *.config.*,
-# index.html, factory-dashboard.html, src/, public/, server/...). This file is
-# defense-in-depth: it keeps secrets, env backups and AI-tool configs OUT of
-# the build context/image, and shrinks the context. Do NOT add entries that
-# match the paths the Dockerfile needs to COPY.
-# ----------------------------------------------------------------------------
+# ---------------------------------------------
+# OracleSentinel / Sentinel - .dockerignore
+# Keep production images small and secret-free.
+# Owned by C1 (repo hygiene). Applies to any docker build using the repo root as context.
+# ---------------------------------------------
 
-# ── Dependencies (installed inside the image) ───────────────────────────────
-node_modules/
-**/node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# ── Build output (produced inside the image) ────────────────────────────────
-build/
-dist/
-server/dist/
-.vite/
-coverage/
-playwright-report/
-test-results/
-.nyc_output/
-
-# ── Secrets & environment files (mounted at runtime, NEVER baked in) ─────────
-.env
-.env.*
-*.env
-*.env.*
-.env.backup.*
-*.env.backup*
-*.local
-ORACLESENTINEL_CONFIG.txt
-*_CONFIG.txt
-*.pem
-*.key
-secrets/
-
-# ── Git ──────────────────────────────────────────────────────────────────────
+# Version control & git metadata
 .git/
 .gitignore
 .gitattributes
+.dockerignore
 
-# ── AI / assistant tool configs (not part of the product) ───────────────────
+# Dependencies (reinstalled inside the image)
+node_modules/
+**/node_modules/
+
+# Build outputs (rebuilt inside the image)
+build/
+dist/
+**/dist/
+coverage/
+playwright-report/
+test-results/
+.cache/
+
+# Secrets & environment files - NEVER ship these in an image
+.env*
+*.env.backup*
+*.env.bak
+ORACLESENTINEL_CONFIG.txt
+**/ORACLESENTINEL_CONFIG.txt
+*_CONFIG.local.txt
+
+# Logs
+*.log
+server.log
+
+# Tests & fixtures (not needed at runtime)
+**/__tests__/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+tests/
+e2e/
+
+# Documentation (not needed at runtime)
+bibliotheque/
+docs/
+*.md
+
+# AI assistant / tool local folders
 .agent/
 .agents/
 .claude/
@@ -56,39 +60,17 @@ secrets/
 .qoder/
 .windsurf/
 
-# ── Documentation (not needed at runtime) ───────────────────────────────────
-bibliotheque/
-docs/
-*.md
-LICENSE
-
-# ── Separate work copies / sub-repos (large, not part of this image) ─────────
+# Separate sub-projects / working copies (not part of the prod image)
 Chatbot/
 ai-chat-agent-main/
+pratice/
+profiles/
+skills/
 
-# ── Dev-only scripts & local tooling ────────────────────────────────────────
-scripts/
-**/__pycache__/
-
-# ── IDE / Editor ─────────────────────────────────────────────────────────────
+# IDE & OS files
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-
-# ── OS files ─────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# ── Logs & temp ──────────────────────────────────────────────────────────────
-*.log
-server.log
-tmp/
-temp/
-
-# ── Docker artifacts ─────────────────────────────────────────────────────────
-.dockerignore
-docker-compose*.yml
-Dockerfile*

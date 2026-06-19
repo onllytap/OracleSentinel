@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────
+# Sentinel — .editorconfig
+# Style cohérent entre éditeurs (VS Code, Cursor, etc.).
+# https://editorconfig.org
+# ─────────────────────────────────────────────
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 100
+
+# Markdown : les espaces de fin peuvent être significatifs (retour à la ligne).
+[*.md]
+trim_trailing_whitespace = false
+
+# Scripts Windows : fins de ligne CRLF.
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
+# Scripts shell exécutés sur Linux : LF.
+[*.sh]
+end_of_line = lf
+
+# Manifestes & lockfiles : ne pas imposer de longueur de ligne.
+[*.{json,yml,yaml}]
+max_line_length = off
+
+# Makefiles : tabulations obligatoires.
+[Makefile]
+indent_style = tab

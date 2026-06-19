@@ -63,10 +63,36 @@ Non implémenté dans ce palier : c'est un changement **transverse** (propagatio
 
 ---
 
+## Phase 2 — Couverture de tests des services métier (F6) (2026-06-19)
+
+Objectif : **verrouiller** la logique métier critique par des tests unitaires fiables, **sans modifier le comportement** (aucune touche à la logique LLM/Groq, aux payloads CRM, ni au design). Zone de travail : `server/src/**/__tests__/**` uniquement. Toutes les dépendances externes sont **mockées** : base `pg`/`pool`, `fetch` (réseau), LLM et connecteurs CRM. Aucun accès réel à une base, un service, un secret ou le réseau. Tests **déterministes** (timers simulés là où nécessaire).
+
+| Cible (F6) | Fichier de test | Couverture verrouillée | Tests |
+|---|---|---|---|
+| a) Qualification | `server/src/services/__tests__/qualification.service.test.ts` (créé) | scoring pondéré + bornage, contrats par domaine, `getMissingFields`, guardrail anti-RDV (`buildQualificationHint`), extraction LLM (parsing JSON, normalisation tél/type, best-effort, erreur → résultat vide) | 18 |
+| b) Import catalogue | `server/src/services/__tests__/catalog-import.service.test.ts` (créé) | `parseXmlListings` (formats multiples + recherche récursive), `mapListingToProperty` (structured_data + bien/indexation, erreurs de validation), `dry_run` vs `commit`, garde-fou « retire-all » sur `seenIds` vide | 16 |
+| c) Chat | `server/src/services/__tests__/chat.service.test.ts` (créé) | `processMessage` avec `pool`+LLM mockés : filtrage `tenant_id` (défaut/trim + scoping des requêtes), insertion messages user+assistant, **seuil CRM** (`CRM_MIN_PUSH_SCORE` + complétude), libération du client | 9 |
+| d) Connecteur Airtable | `server/src/services/crm/__tests__/airtable-connector.test.ts` (créé) | **forme exacte** du payload webhook (`fetch` mocké) + gating (non configuré / doublon tél / session déjà poussée) | 5 |
+| d) Connecteur Twenty | `server/src/services/crm/__tests__/twenty-connector.test.ts` (créé) | **forme exacte** du payload `upsertPerson` (champs custom activés/désactivés, normalisation tél) | 3 |
+| d) Mapping Twenty | `server/src/services/crm/__tests__/twenty-mapping.config.test.ts` (créé) | `computeQualificationLevel`, `normalizeScoreForTwenty`, **gel** des noms de champs CDM→Twenty et des enums | 10 |
+| e) Admin utils | `server/src/routes/__tests__/admin-utils.test.ts` (étendu) | allowlist de tables (`isAllowedAdminCountTable`) + refus d'une table hors allowlist **sans** requête DB (défense injection SQL) | +2 |
+
+**Total : 63 tests ajoutés.**
+
+### Vérification
+- `cd server && npx vitest run` ⇒ **suite verte** : 25 fichiers, **161 passés, 7 ignorés, 0 échec**. Les 7 « skipped » sont des tests d'intégration *real DB* d'autres fichiers (`rls`, `tenant-isolation`) qui s'auto-ignorent en l'absence de base réelle — hors de ce lot.
+- Les payloads CRM (flux prod protégés) sont verrouillés par un `toEqual` sur l'objet complet : toute modification accidentelle du payload casse immédiatement le test. Le payload n'est **pas** modifié.
+
+### Impact / non-régression
+- **Aucune modification de code source** : tous les symboles testés étaient déjà exportés ; l'exception « plus petit `export` possible » n'a pas été nécessaire. Réversible (fichiers `*.test.ts` uniquement, suivis par git).
+- Les cibles e) `validators` (Zod) / `factory/validation` et f) `ssrf-guard` disposaient déjà de tests (rebinding, IP privées/CGNAT/multicast, IPv6, formes malformées) ; seul le manque utile côté **allowlist admin** a été complété. La gestion des **redirections** relève de `factory.routes.ts` (`redirect: 'manual'`), hors du périmètre unitaire de `ssrf-guard`.
+
+---
+
 ## Reste à faire (validation / palier ultérieur)
 
 - **F8** — RLS PostgreSQL (POC test d'abord, voir ADR_0003).
-- **F6 (suite)** — Couverture profonde des services métier (chat.service, admin.routes, factory, catalog, connecteurs CRM) — gros chantier à planifier.
+- **F6 (suite)** — ✅ Cœur métier couvert (Phase 2 : qualification, catalog-import, chat.service, connecteurs CRM Airtable/Twenty, allowlist admin). Reste optionnel : `admin.routes` (mutations/purge tenant) et `factory` build-pipeline, plutôt en tests d'intégration.
 - **F5 (exécution)** — Lancer la purge des backups + mettre les secrets en coffre (décision opérateur).
 - **QG (suite)** — Onglet « Chatbots » du QG React enrichi (badge santé par agence, tri/recherche pour 350+) ; option : unifier `/priv` → QG React.
 

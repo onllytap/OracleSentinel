@@ -1,0 +1,68 @@
+# ─────────────────────────────────────────────
+# Sentinel — .gitattributes
+# Normalisation des fins de ligne (dépôt Windows déployé sur VPS Linux)
+# et classification linguist (vendored / generated / documentation).
+# ─────────────────────────────────────────────
+
+# Par défaut : normaliser en LF dans le dépôt, restituer en natif au checkout.
+* text=auto
+
+# ── Scripts exécutés sur Linux : DOIVENT rester en LF ────────────────────────
+*.sh        text eol=lf
+deploy.sh   text eol=lf
+Dockerfile* text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# ── Scripts/fichiers Windows : conserver CRLF ────────────────────────────────
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# ── Sources & config (texte explicite) ───────────────────────────────────────
+*.ts        text
+*.tsx       text
+*.js        text
+*.jsx       text
+*.mjs       text
+*.cjs       text
+*.json      text
+*.css       text
+*.scss      text
+*.html      text
+*.md        text
+*.xml       text
+*.svg       text
+
+# ── Binaires : pas de conversion de fin de ligne, pas de diff texte ──────────
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.pdf       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.eot       binary
+*.mp3       binary
+*.wav       binary
+*.ogg       binary
+*.zip       binary
+*.lnk       binary
+
+# ── Classification GitHub Linguist (statistiques de langage propres) ─────────
+# Librairie de skills d'agents (tierce) : ne pas compter comme code du produit.
+.agents/**       linguist-vendored
+.agent/**        linguist-vendored
+.claude/**       linguist-vendored
+.kiro/**         linguist-vendored
+# Documentation (source de vérité) : marquée comme documentation.
+bibliotheque/**  linguist-documentation
+docs/**          linguist-documentation
+# Sorties de build & sous-copies de travail : exclues des stats.
+build/**         linguist-generated
+public/**        linguist-vendored
+Chatbot/**       linguist-vendored
+ai-chat-agent-main/** linguist-vendored

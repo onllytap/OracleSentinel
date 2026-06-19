@@ -45,3 +45,23 @@ Thumbs.db
 *.tmp
 *.temp
 .cache/
+
+# ---------------------------------------------
+# AI assistant / tool local folders (per-developer) - NOT versioned.
+# Each IDE/assistant creates its own local config/skills folder; these are
+# environment-specific and must not pollute the repo. This also clears the
+# stale git status warnings about deleted .agent/skills/ folders.
+# Intentionally KEPT tracked (useful shared config, do NOT ignore):
+# .kiro/ (specs + settings), .github/ (CI/workflows), .vscode/ (handled above),
+# .agents/ (versioned skills library, ~359 tracked files).
+# ---------------------------------------------
+.agent/
+.cursor/
+.gemini/
+.qoder/
+.windsurf/
+.kilocode/
+.opencode/
+
+# Server logs (already matched by *.log above; listed explicitly for clarity)
+server.log

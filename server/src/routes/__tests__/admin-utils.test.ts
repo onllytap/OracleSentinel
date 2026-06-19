@@ -60,3 +60,36 @@ describe("admin-utils", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Table allowlist (SQL-injection defense, finding F6 — target e)
+// ---------------------------------------------------------------------------
+// safeCount interpolates the table name directly into the SQL string, so the
+// allowlist is the security boundary. These tests lock that guard: only known
+// tables are accepted, and anything else is refused WITHOUT touching the DB.
+
+describe("admin-utils · table allowlist", () => {
+  it("recognizes only the allowlisted count tables", async () => {
+    const { isAllowedAdminCountTable } = await import("../admin-utils");
+
+    expect(isAllowedAdminCountTable("leads")).toBe(true);
+    expect(isAllowedAdminCountTable("catalog_properties")).toBe(true);
+    expect(isAllowedAdminCountTable("conversations")).toBe(true);
+
+    expect(isAllowedAdminCountTable("pg_user")).toBe(false);
+    expect(isAllowedAdminCountTable("leads; DROP TABLE leads")).toBe(false);
+    expect(isAllowedAdminCountTable("")).toBe(false);
+  });
+
+  it("refuses a non-allowlisted table, returns 0 and never queries the database", async () => {
+    const { safeCount } = await import("../admin-utils");
+
+    await expect(safeCount("secret_table" as never)).resolves.toBe(0);
+
+    expect(poolQuery).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      { table: "secret_table" },
+      "Rejected count query for disallowed table",
+    );
+  });
+});
