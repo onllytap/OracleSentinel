@@ -17,6 +17,11 @@ import { requireAdminSession } from "../middleware/admin-session";
 import { collectInfraSnapshot } from "../services/infra-monitor.service";
 import { collectFleetSnapshot } from "../services/fleet.service";
 import { collectSurveillanceSnapshot } from "../services/surveillance.service";
+import {
+  collectWorkersSnapshot,
+  getWorkerDetail,
+  isValidWorkerName,
+} from "../services/cloudflare.service";
 
 // ── Page handler (mirrors factory-ui.routes / admin.routes) ──────────────────
 
@@ -122,6 +127,39 @@ router.get("/surveillance", requireAdminSession(), async (_req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "Surveillance snapshot failed" });
+  }
+});
+
+// ── Cloudflare Workers (Phase 1 — read-only) ─────────────────────────────────
+// Lists deployed Workers with a REAL health-ping status. Degrades gracefully if
+// CLOUDFLARE_API_TOKEN/ACCOUNT_ID are not set (configured:false). No writes.
+router.get("/workers", requireAdminSession(), async (_req, res) => {
+  try {
+    const snapshot = await collectWorkersSnapshot();
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, ...snapshot });
+  } catch (err: any) {
+    console.error("[Command Center] workers snapshot failed:", err?.message);
+    return res
+      .status(500)
+      .json({ success: false, error: "Workers snapshot failed" });
+  }
+});
+
+router.get("/workers/:name", requireAdminSession(), async (req, res) => {
+  const name = String(req.params.name || "");
+  if (!isValidWorkerName(name)) {
+    return res.status(400).json({ success: false, error: "Invalid worker name" });
+  }
+  try {
+    const detail = await getWorkerDetail(name);
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, ...detail });
+  } catch (err: any) {
+    console.error("[Command Center] worker detail failed:", err?.message);
+    return res
+      .status(502)
+      .json({ success: false, error: "Worker detail failed" });
   }
 });
 

@@ -6,7 +6,9 @@ import {
   Bot,
   Building2,
   Cctv,
+  Cloud,
   Eye,
+  ExternalLink,
   Gauge,
   LayoutDashboard,
   LogOut,
@@ -70,7 +72,7 @@ import { WorldGrid } from "./components/world-grid";
 import { Icon8, Icons8Attribution } from "./components/icon8";
 import { apiFetch, checkSession, getJSON, login, logout } from "./api";
 
-type View = "overview" | "chatbots" | "surveillance" | "conversations" | "infra";
+type View = "overview" | "chatbots" | "surveillance" | "workers" | "conversations" | "infra";
 
 // ── Reusable: friendly error state ───────────────────────────────────────────
 
@@ -156,6 +158,7 @@ const NAV: { id: View; label: string; icon: React.ComponentType<any> }[] = [
   { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
   { id: "chatbots", label: "Chatbots", icon: Bot },
   { id: "surveillance", label: "Surveillance", icon: Cctv },
+  { id: "workers", label: "Workers", icon: Cloud },
   { id: "conversations", label: "Conversations", icon: MessageSquare },
   { id: "infra", label: "Infrastructure", icon: Server },
 ];
@@ -1500,6 +1503,240 @@ function SurveillanceView({ nonce, onSelect }: { nonce: number; onSelect: (b: an
   );
 }
 
+// ── Workers (Cloudflare — Phase 1, lecture seule) ────────────────────────────
+
+const WORKER_STATUS_CFG: Record<
+  string,
+  { label: string; dot: string; badge: "default" | "secondary" | "destructive" | "outline" }
+> = {
+  online: { label: "ONLINE", dot: "bg-emerald-500", badge: "default" },
+  degraded: { label: "DEGRADED", dot: "bg-amber-400", badge: "secondary" },
+  down: { label: "DOWN", dot: "bg-red-500", badge: "destructive" },
+  unknown: { label: "—", dot: "bg-slate-500", badge: "outline" },
+};
+
+function WorkerDetail({ name, onClose }: { name: string | null; onClose: () => void }) {
+  const [data, setData] = useState<any | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!name) {
+      setData(null);
+      setErr("");
+      return;
+    }
+    setData(null);
+    setErr("");
+    getJSON(`/api/priv/workers/${encodeURIComponent(name)}`)
+      .then((d) => setData(d))
+      .catch((e) => setErr(e?.message || "Erreur"));
+  }, [name]);
+
+  const cfg = data ? WORKER_STATUS_CFG[data.status] || WORKER_STATUS_CFG.unknown : WORKER_STATUS_CFG.unknown;
+
+  return (
+    <Dialog open={!!name} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary">
+              <Cloud className="size-4" />
+            </span>
+            <span className="font-mono">{name}</span>
+          </DialogTitle>
+          <DialogDescription>Worker Cloudflare · lecture seule (Phase 1)</DialogDescription>
+        </DialogHeader>
+
+        {err ? (
+          <p className="text-sm text-destructive">{err}</p>
+        ) : !data ? (
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium">
+                <span className={cn("size-1.5 rounded-full", cfg.dot)} />
+                {cfg.label}
+              </span>
+              {data.latencyMs != null && (
+                <span className="text-xs text-muted-foreground">{data.latencyMs} ms</span>
+              )}
+              {data.url && (
+                <a
+                  href={data.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  Ouvrir <ExternalLink className="size-3" />
+                </a>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Stat label="Compat date" value={data.compatibilityDate || "—"} />
+              <Stat label="Usage model" value={data.usageModel || "—"} />
+            </div>
+
+            <div className="space-y-1.5 rounded-lg border bg-card/40 p-3 text-sm">
+              <div className="text-xs font-medium text-muted-foreground">
+                Bindings ({(data.bindings || []).length})
+              </div>
+              {(data.bindings || []).length === 0 ? (
+                <span className="text-xs text-muted-foreground">Aucun binding.</span>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {data.bindings.map((b: any, i: number) => (
+                    <Badge key={i} variant="outline" className="font-mono text-[10px]">
+                      {b.name}
+                      <span className="ml-1 opacity-60">{b.type}</span>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <p className="pt-1 text-[10px] text-muted-foreground">
+                Valeurs masquées (sécurité). Édition & redéploiement = Phase 2.
+              </p>
+            </div>
+
+            {data.error && <p className="text-xs text-amber-400">{data.error}</p>}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Fermer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WorkersView({ nonce }: { nonce: number }) {
+  const [data, setData] = useState<any | null>(null);
+  const [err, setErr] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const refresh = useCallback((soft: boolean) => {
+    if (!soft) {
+      setErr("");
+      setData(null);
+    }
+    getJSON("/api/priv/workers")
+      .then((d) => setData(d))
+      .catch((e) => {
+        if (!soft) setErr(e?.message || "Erreur");
+      });
+  }, []);
+
+  useEffect(() => {
+    refresh(false);
+  }, [refresh, nonce]);
+
+  useEffect(() => {
+    const t = setInterval(() => refresh(true), 30000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  if (err) return <ErrorState message={err} onRetry={() => refresh(false)} />;
+  if (!data) {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-32 rounded-xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!data.configured) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Cloud className="size-4 text-primary" /> Cloudflare non configuré
+          </CardTitle>
+          <CardDescription>
+            Pour superviser tes Workers, configure un token Cloudflare en lecture seule.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            Ajoute dans le <code>.env</code> du backend, puis redémarre-le :
+          </p>
+          <pre className="overflow-x-auto rounded-lg border bg-card/40 p-3 font-mono text-xs">{`CLOUDFLARE_API_TOKEN=...   # permission Workers Scripts: Read
+CLOUDFLARE_ACCOUNT_ID=...
+CLOUDFLARE_WORKERS_SUBDOMAIN=neverdiscord666`}</pre>
+          <p>Cette vue affichera alors tes Workers avec leur statut en temps réel.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const s = data.summary || {};
+  const workers: any[] = data.workers || [];
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-primary/20">
+        <CardContent className="flex flex-wrap items-center gap-4 py-4">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/20">
+            <Cloud className="size-6 text-primary" />
+          </span>
+          <div className="mr-auto">
+            <CardTitle className="text-base">Workers Cloudflare</CardTitle>
+            <CardDescription className="mt-1">
+              {s.total} workers · {s.online} online · {s.degraded} dégradés · {s.down} down
+            </CardDescription>
+          </div>
+          {data.error && <span className="text-xs text-amber-400">{data.error}</span>}
+        </CardContent>
+      </Card>
+
+      {workers.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Aucun worker déployé.</p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {workers.map((w: any) => {
+            const cfg = WORKER_STATUS_CFG[w.status] || WORKER_STATUS_CFG.unknown;
+            return (
+              <button
+                key={w.name}
+                onClick={() => setSelected(w.name)}
+                className="rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10 focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2 truncate font-mono text-sm font-semibold">
+                    <Cloud className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{w.name}</span>
+                  </span>
+                  <Badge variant={cfg.badge} className="h-5 shrink-0 gap-1 px-1.5 text-[9px]">
+                    <span className={cn("size-1.5 rounded-full", cfg.dot, w.status === "online" && "rec-dot")} />
+                    {cfg.label}
+                  </Badge>
+                </div>
+                <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Radio className="size-3" />
+                    {w.latencyMs != null ? `${w.latencyMs} ms` : "—"}
+                  </span>
+                  <span className="ml-auto truncate">{w.modifiedOn ? `maj ${relTime(w.modifiedOn)}` : ""}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <WorkerDetail name={selected} onClose={() => setSelected(null)} />
+    </div>
+  );
+}
+
 // ── Infrastructure ───────────────────────────────────────────────────────────
 
 function InfraView({ nonce, onHealth }: { nonce: number; onHealth: (h: number) => void }) {
@@ -1614,9 +1851,11 @@ export function CommandCenter() {
         ? "Chatbots déployés"
         : view === "surveillance"
           ? "Mur de surveillance"
-          : view === "conversations"
-            ? "Conversations & Leads"
-            : "Infrastructure";
+          : view === "workers"
+            ? "Workers Cloudflare"
+            : view === "conversations"
+              ? "Conversations & Leads"
+              : "Infrastructure";
 
   return (
     <div className="flex min-h-screen">
@@ -1644,6 +1883,7 @@ export function CommandCenter() {
           {view === "overview" && <OverviewView nonce={nonce} />}
           {view === "chatbots" && <ChatbotsView nonce={nonce} />}
           {view === "surveillance" && <SurveillanceView nonce={nonce} onSelect={setSelected} />}
+          {view === "workers" && <WorkersView nonce={nonce} />}
           {view === "conversations" && <ConversationsView nonce={nonce} />}
           {view === "infra" && <InfraView nonce={nonce} onHealth={setHealth} />}
         </div>
