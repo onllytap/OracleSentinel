@@ -7,13 +7,14 @@ name: Security Audit
 #                 blocking the pipeline (tighten to blocking once history is
 #                 verified clean).
 
+# NOTE: declenchement MANUEL uniquement (workflow_dispatch) tant que la
+# facturation GitHub Actions du compte est bloquee (les jobs ne demarrent pas
+# tant que le compte est locked -> runs rouges a chaque push). Pour reactiver
+# l'execution automatique une fois le billing regle, restaurer:
+#   push:
+#     branches: [main, master, develop]
+#   pull_request:
 on:
-  push:
-    branches:
-      - main
-      - master
-      - develop
-  pull_request:
   workflow_dispatch:
 
 permissions:

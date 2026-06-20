@@ -1,12 +1,15 @@
 name: CI
 
+# NOTE: declenchement MANUEL uniquement (workflow_dispatch) tant que la
+# facturation GitHub Actions du compte est bloquee. Cela evite des runs en
+# echec a chaque push (les jobs ne demarrent pas tant que le compte est locked).
+# Pour relancer le CI automatiquement quand le billing sera regle, restaurer:
+#   on:
+#     push:
+#       branches: [main, master, develop]
+#     pull_request:
 on:
-  push:
-    branches:
-      - main
-      - master
-      - develop
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
