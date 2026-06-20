@@ -124,3 +124,56 @@ Pièges connus :
   **changé** (il a circulé en clair) ; idéalement `PasswordAuthentication no`.
 - Clé révocable : retirer la ligne `kiro-sentinel` de `~/.ssh/authorized_keys`.
 - Ne jamais committer d'identifiants VPS / tokens / mots de passe dans le repo.
+
+---
+
+## 7. Déploiement du backend (runbook)
+
+> `/opt/oraclesentinel` est désormais un **dépôt git** (remote `github` =
+> OracleSentinel). Déploiement = mettre le code à jour vers `main` puis rebuild.
+
+### Déploiement standard (futur)
+```bash
+ssh sentinel-vps
+cd /opt/oraclesentinel
+git fetch github main && git reset --hard github/main   # server/.env (gitignoré) préservé
+docker compose up -d --build oraclesentinel              # build image + recreate conteneur
+# Vérifier :
+curl -s https://api.oraclesentinel.com/health            # {"status":"ok","database":"ok"}
+docker compose ps oraclesentinel                         # STATUS = Up (healthy)
+docker logs oraclesentinel-server --tail 20              # "Server started"
+```
+
+### Config VPS-LOCALE (PAS dans le dépôt — à préserver)
+Ces éléments vivent uniquement sur le VPS et ne doivent jamais être écrasés :
+- **`/opt/oraclesentinel/docker-compose.yml`** : compose VPS-local (le dépôt fournit
+  `docker-compose.production.yml`, non utilisé ici). Son `DATABASE_URL` pointe vers
+  `oraclesentinel-db` et **doit finir par `?sslmode=disable`** (la DB locale Docker
+  ne parle pas TLS ; le code n'active TLS que sinon).
+- **`/opt/oraclesentinel/server/.env`** (gitignoré) : doit contenir, en plus des
+  secrets habituels :
+  - `ADMIN_SESSION_SECRET=<aléatoire ≥32, DISTINCT de ADMIN_API_KEY>` — **requis en
+    prod** (durcissement F9 : le backend refuse de démarrer sinon).
+  - `CLOUDFLARE_WORKERS_SUBDOMAIN=neverdiscord666` — pour l'onglet Workers du QG.
+
+### Pré-requis du build (corrigés dans le dépôt — pour mémoire)
+Le `Dockerfile.production` build frontend (Vite) + backend (esbuild ESM). Points qui
+avaient cassé le 1er déploiement (désormais corrigés sur `main`) :
+- Le build frontend doit copier **`dashboard.html`** (entrée Vite du QG).
+- `server/package.json` doit déclarer **better-auth, helmet, multer, stripe** (le bundle
+  esbuild les laisse `external` → ils doivent exister dans l'image).
+- Le banner esbuild ESM définit `require`/`__dirname`/`__filename` via imports namespace.
+
+### Rollback
+```bash
+ssh sentinel-vps
+cd /opt/oraclesentinel
+# 1. Restaurer le code + .env depuis la sauvegarde horodatée
+tar xzf /root/os-backup-<TS>.tgz -C /opt
+cp /root/os-server-env-<TS>.bak server/.env
+# 2. Repartir sur l'image précédente
+docker tag oraclesentinel-oraclesentinel:rollback-<TS> oraclesentinel-oraclesentinel:latest
+docker compose up -d oraclesentinel
+```
+(Les sauvegardes `/root/os-backup-*.tgz`, `/root/os-server-env-*.bak` et les images
+`:rollback-*` sont créées avant chaque déploiement.)
