@@ -16,6 +16,7 @@ import path from "path";
 import { requireAdminSession } from "../middleware/admin-session";
 import { collectInfraSnapshot } from "../services/infra-monitor.service";
 import { collectFleetSnapshot } from "../services/fleet.service";
+import { collectSurveillanceSnapshot } from "../services/surveillance.service";
 
 // ── Page handler (mirrors factory-ui.routes / admin.routes) ──────────────────
 
@@ -102,6 +103,25 @@ router.get("/overview", requireAdminSession(), async (_req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "Fleet overview failed" });
+  }
+});
+
+// Surveillance wall — real-time per-agency monitoring built on the fleet
+// snapshot + live activity (messages/conversations/leads in 24h), recent
+// factory deployments and a PII-free activity feed. Read-only, briefly cached.
+router.get("/surveillance", requireAdminSession(), async (_req, res) => {
+  try {
+    const snapshot = await collectSurveillanceSnapshot();
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, ...snapshot });
+  } catch (err: any) {
+    console.error(
+      "[Command Center] surveillance snapshot failed:",
+      err?.message,
+    );
+    return res
+      .status(500)
+      .json({ success: false, error: "Surveillance snapshot failed" });
   }
 });
 

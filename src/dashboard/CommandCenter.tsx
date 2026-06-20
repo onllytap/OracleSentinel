@@ -1201,21 +1201,61 @@ function ConversationsView({ nonce }: { nonce: number }) {
   );
 }
 
-// ── Surveillance (camera wall) ───────────────────────────────────────────────
+// ── Surveillance (real-time monitoring wall) ─────────────────────────────────
 
-function isOnline(lastUpdated: any): boolean {
-  if (!lastUpdated) return false;
-  const t = new Date(lastUpdated).getTime();
-  return Date.now() - t < 7 * 24 * 60 * 60 * 1000; // active in last 7 days
+type LiveStatus = "live" | "active" | "idle" | "offline";
+
+const LIVE_CFG: Record<LiveStatus, { label: string; tag: string; dot: string; tone: string }> = {
+  live: { label: "REC", tag: "LIVE", dot: "bg-red-500", tone: "text-red-400" },
+  active: { label: "ACTIF", tag: "actif", dot: "bg-emerald-500", tone: "text-emerald-400" },
+  idle: { label: "VEILLE", tag: "veille", dot: "bg-amber-400", tone: "text-amber-300" },
+  offline: { label: "OFFLINE", tag: "offline", dot: "bg-slate-500", tone: "text-slate-400" },
+};
+
+const LIVE_FILTERS: { id: LiveStatus | "all"; label: string }[] = [
+  { id: "all", label: "Tous" },
+  { id: "live", label: "En direct" },
+  { id: "active", label: "Actifs 24h" },
+  { id: "idle", label: "En veille" },
+  { id: "offline", label: "Hors ligne" },
+];
+
+/** Compact relative time in French: "à l'instant", "il y a 4 min", "il y a 2 h". */
+function relTime(v: any): string {
+  if (!v) return "jamais";
+  const t = new Date(v).getTime();
+  if (!Number.isFinite(t)) return "—";
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 0) return "à l'instant";
+  if (s < 45) return "à l'instant";
+  if (s < 90) return "il y a 1 min";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `il y a ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `il y a ${h} h`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `il y a ${d} j`;
+  return fmtDate(v);
+}
+
+function KpiPill({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
+  return (
+    <div className="min-w-[96px] flex-1 rounded-lg border border-border bg-card/60 px-3 py-2">
+      <div className={cn("text-xl font-bold leading-none tracking-tight", tone)}>{value}</div>
+      <div className="mt-1 text-[11px] text-muted-foreground">{label}</div>
+    </div>
+  );
 }
 
 function SurvTile({ bot, index, onSelect }: { bot: any; index: number; onSelect: (b: any) => void }) {
-  const online = isOnline(bot.last_updated);
+  const status: LiveStatus = (bot.liveStatus as LiveStatus) || "offline";
+  const cfg = LIVE_CFG[status] || LIVE_CFG.offline;
+  const live = status === "live";
   const conv = bot.conversation_count ?? 0;
   const leads = bot.lead_count ?? 0;
+  const msgs24 = bot.messages24h ?? 0;
   const cam = String(index + 1).padStart(2, "0");
-  // Pseudo ping derived from id hash — stable per bot, purely indicative.
-  const ping = 20 + (String(bot.tenant_id).length * 7 + index * 13) % 90;
+  const lastSeen = relTime(bot.lastActivityAt ?? bot.lastMessageAt ?? bot.last_updated);
 
   return (
     <button
@@ -1224,7 +1264,7 @@ function SurvTile({ bot, index, onSelect }: { bot: any; index: number; onSelect:
     >
       {/* Feed background */}
       <div className="cam-grain absolute inset-0 opacity-60" />
-      <div className="cam-scanline absolute inset-0" />
+      {live && <div className="cam-scanline absolute inset-0" />}
       <div className="absolute inset-0 flex items-center justify-center opacity-20">
         <Icon8 name="camera" size={56} alt="" className="grayscale" />
       </div>
@@ -1232,22 +1272,18 @@ function SurvTile({ bot, index, onSelect }: { bot: any; index: number; onSelect:
       {/* Top bar */}
       <div className="absolute inset-x-0 top-0 flex items-center justify-between p-2 text-[10px] font-medium text-white/80">
         <span className="flex items-center gap-1.5">
-          {online ? (
-            <span className="rec-dot inline-block size-2 rounded-full bg-red-500" />
-          ) : (
-            <span className="inline-block size-2 rounded-full bg-slate-500" />
-          )}
-          {online ? "REC" : "OFFLINE"}
+          <span className={cn("inline-block size-2 rounded-full", cfg.dot, live && "rec-dot")} />
+          {cfg.label}
         </span>
         <span className="font-mono">CAM {cam}</span>
       </div>
 
       {/* Bottom info */}
       <div className="absolute inset-x-0 bottom-0 space-y-1 bg-gradient-to-t from-black/90 to-transparent p-2.5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <span className="truncate text-xs font-semibold text-white">{bot.tenant_id}</span>
-          <Badge variant={online ? "default" : "secondary"} className="h-4 px-1.5 text-[9px]">
-            {online ? "LIVE" : "veille"}
+          <Badge variant={live ? "default" : "secondary"} className="h-4 shrink-0 px-1.5 text-[9px]">
+            {cfg.tag}
           </Badge>
         </div>
         <div className="flex items-center gap-2 text-[10px] text-white/60">
@@ -1255,83 +1291,210 @@ function SurvTile({ bot, index, onSelect }: { bot: any; index: number; onSelect:
           <span className="flex items-center gap-1"><Users className="size-3" />{leads}</span>
           <span className="ml-auto flex items-center gap-1">
             <Radio className="size-3" />
-            <span className={online ? "text-emerald-400" : "text-slate-400"}>{online ? `${ping}ms` : "—"}</span>
+            <span className={cn(msgs24 > 0 ? "text-emerald-400" : "text-slate-400")}>{msgs24} msg/24h</span>
           </span>
         </div>
+        <div className="truncate text-[9px] text-white/40">vu {lastSeen}</div>
       </div>
     </button>
   );
 }
 
+function DeployRow({ d }: { d: any }) {
+  const variant: "default" | "secondary" | "destructive" =
+    d.status === "success" ? "default" : d.status === "failure" ? "destructive" : "secondary";
+  const dotColor =
+    d.status === "success" ? "bg-emerald-500" : d.status === "failure" ? "bg-red-500" : "bg-amber-400";
+  const providers = [d.crmProvider, d.llmProvider].filter(Boolean).join(" · ") || "—";
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-card/40 px-3 py-2">
+      <span className={cn("size-2 shrink-0 rounded-full", dotColor)} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-xs font-medium">{d.agentName || "agent"}</span>
+          {d.productionReady && (
+            <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[9px] text-emerald-400">prod</Badge>
+          )}
+        </div>
+        <div className="truncate text-[10px] text-muted-foreground">{providers} · {relTime(d.at)}</div>
+      </div>
+      <Badge variant={variant} className="h-5 shrink-0 px-1.5 text-[9px]">{d.status}</Badge>
+    </div>
+  );
+}
+
 function SurveillanceView({ nonce, onSelect }: { nonce: number; onSelect: (b: any) => void }) {
-  const [tenants, setTenants] = useState<any[] | null>(null);
+  const [data, setData] = useState<any | null>(null);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<LiveStatus | "all">("all");
 
-  const load = useCallback(() => {
-    setErr("");
-    setTenants(null);
-    getJSON("/api/admin/db/tenants")
-      .then((d: any) => setTenants(d.tenants || []))
-      .catch((e) => setErr(e?.message || "Erreur"));
+  // Soft refresh keeps the wall on screen while refetching (no skeleton flash);
+  // a hard refresh (initial load / manual retry) shows the skeleton grid.
+  const refresh = useCallback((soft: boolean) => {
+    if (!soft) {
+      setErr("");
+      setData(null);
+    }
+    getJSON("/api/priv/surveillance")
+      .then((d: any) => setData(d))
+      .catch((e) => {
+        if (!soft) setErr(e?.message || "Erreur");
+      });
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load, nonce]);
+    refresh(false);
+  }, [refresh, nonce]);
+
+  // Near-real-time feel: poll every 12s without clearing the wall.
+  useEffect(() => {
+    const t = setInterval(() => refresh(true), 12000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  const bots: any[] = data?.bots || [];
+  const fleet = data?.fleet;
 
   const filtered = useMemo(() => {
-    if (!tenants) return [];
     const s = q.trim().toLowerCase();
-    return s ? tenants.filter((t: any) => String(t.tenant_id).toLowerCase().includes(s)) : tenants;
-  }, [tenants, q]);
-
-  const onlineCount = filtered.filter((t: any) => isOnline(t.last_updated)).length;
+    return bots.filter((b: any) => {
+      if (filter !== "all" && b.liveStatus !== filter) return false;
+      if (s && !String(b.tenant_id).toLowerCase().includes(s)) return false;
+      return true;
+    });
+  }, [bots, q, filter]);
 
   return (
     <div className="space-y-4">
+      {/* Header + fleet KPIs */}
       <Card className="border-primary/20">
-        <CardContent className="flex flex-wrap items-center gap-4 py-4">
-          <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/20">
-            <Icon8 name="controlPanel" size={26} alt="" />
-          </span>
-          <div className="mr-auto">
-            <div className="flex items-center gap-2">
-              <CardTitle className="text-base">Mur de surveillance</CardTitle>
-              <BadgeGroup addonText="Live">Flux temps réel des agences</BadgeGroup>
+        <CardContent className="space-y-4 py-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/20">
+              <Icon8 name="controlPanel" size={26} alt="" />
+            </span>
+            <div className="mr-auto">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">Mur de surveillance</CardTitle>
+                <BadgeGroup addonText="Live">Flux temps réel des agences</BadgeGroup>
+              </div>
+              <CardDescription className="mt-1">
+                {fleet
+                  ? `${fleet.live} en direct · ${fleet.active} actifs · ${fleet.agencies} agences supervisées`
+                  : "Connexion aux flux…"}
+              </CardDescription>
             </div>
-            <CardDescription className="mt-1">
-              {tenants ? `${onlineCount}/${filtered.length} flux actifs` : "Connexion aux flux…"}
-            </CardDescription>
+            <div className="relative w-56 max-w-full">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrer une agence…" className="pl-8" />
+            </div>
           </div>
-          <div className="relative w-56 max-w-full">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrer une caméra…" className="pl-8" />
-          </div>
+          {fleet && (
+            <div className="flex flex-wrap gap-2">
+              <KpiPill label="En direct" value={fleet.live} tone="text-red-400" />
+              <KpiPill label="Actifs 24h" value={fleet.active} tone="text-emerald-400" />
+              <KpiPill label="Messages 24h" value={fleet.messages24h} />
+              <KpiPill label="Conversations 24h" value={fleet.conversations24h} />
+              <KpiPill label="Leads 24h" value={fleet.leads24h} />
+              <KpiPill label="Conversion" value={`${fleet.avgConversion}%`} />
+              <KpiPill label="Hors ligne" value={fleet.offline} tone="text-slate-400" />
+            </div>
+          )}
         </CardContent>
       </Card>
 
+      {/* Live status filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        {LIVE_FILTERS.map((f) => (
+          <Button
+            key={f.id}
+            size="sm"
+            variant={filter === f.id ? "secondary" : "ghost"}
+            className="h-7 px-2.5 text-xs"
+            onClick={() => setFilter(f.id)}
+          >
+            {f.label}
+          </Button>
+        ))}
+      </div>
+
       {err ? (
-        <ErrorState message={err} onRetry={load} />
-      ) : !tenants ? (
+        <ErrorState message={err} onRetry={() => refresh(false)} />
+      ) : !data ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {Array.from({ length: 10 }).map((_, i) => (
             <Skeleton key={i} className="aspect-[16/10] rounded-xl" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Aucune caméra / agence à afficher.</p>
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {filtered.map((t: any, i: number) => (
-              <SurvTile key={t.tenant_id} bot={t} index={i} onSelect={onSelect} />
-            ))}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
+          {/* Camera wall */}
+          <div>
+            {filtered.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucune agence ne correspond au filtre.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {filtered.map((b: any, i: number) => (
+                  <SurvTile key={b.tenant_id} bot={b} index={i} onSelect={onSelect} />
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end pt-2">
+              <Icons8Attribution />
+            </div>
           </div>
-          <div className="flex justify-end pt-1">
-            <Icons8Attribution />
+
+          {/* Side panels: deployments + live activity */}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Server className="size-4 text-primary" /> Déploiements récents
+                </CardTitle>
+                <CardDescription className="text-[11px]">
+                  Via /factory ou l'API — visibles ici en direct
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(data.deployments || []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Aucun déploiement enregistré.</p>
+                ) : (
+                  data.deployments.slice(0, 6).map((d: any) => <DeployRow key={d.buildId} d={d} />)
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Activity className="size-4 text-primary" /> Activité live
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2.5">
+                {(data.activity || []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Aucune activité récente.</p>
+                ) : (
+                  data.activity.map((a: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      <span
+                        className={cn(
+                          "mt-1 size-1.5 shrink-0 rounded-full",
+                          a.type === "deploy" ? "bg-sky-400" : "bg-emerald-400",
+                        )}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-foreground/90">{a.label}</div>
+                        <div className="text-[10px] text-muted-foreground">{relTime(a.at)}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
