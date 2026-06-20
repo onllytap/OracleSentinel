@@ -15,6 +15,7 @@ Ce dossier consigne les **décisions d'architecture** proposées pour l'évoluti
 | [ADR_0001](ADR_0001_evolution_qg_supervision_unifiee.md) | Évolution du QG vers une supervision unifiée | Accepté — étape 1 livrée |
 | [ADR_0002](ADR_0002_gestion_distante_chatbots.md) | Gestion distante contrôlée des chatbots | Proposé |
 | [ADR_0003](ADR_0003_defense_profondeur_multitenant_rls.md) | Défense en profondeur multi-tenant (RLS PostgreSQL) | Proposé |
+| [ADR_0004](ADR_0004_fix_ingress_tunnel_cloudflare.md) | Fix ingress tunnel Cloudflare (4000→3001) | Accepté — appliqué |
 
 ## Garde-fous transverses (s'appliquent à tous les ADR)
 

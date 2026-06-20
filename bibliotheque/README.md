@@ -16,6 +16,7 @@ Un **chatbot widget multi-tenant** qui qualifie des leads immobiliers, discute a
 ```
 bibliotheque/
 ├── README.md            ← CE FICHIER (index maître)
+├── ROADMAP_QG_REMOTE_CONTROL.md  ← Plan des features du QG de contrôle à distance
 │
 ├── audit/               ← Compréhension & sécurité (commence par ici)
 │   ├── SYSTEM_MAP.md         Cartographie des 3 systèmes de l'écosystème
@@ -24,13 +25,15 @@ bibliotheque/
 │   └── REMEDIATION_LOG.md    Journal des corrections appliquées (Phase 1…)
 │
 ├── architecture/        ← Comment le système est construit
-│   └── ARCHITECTURE.md       Architecture réelle, modèle de données, flux
+│   ├── ARCHITECTURE.md       Architecture réelle, modèle de données, flux
+│   └── VPS_DEPLOYMENT_MAP.md Topologie de PRODUCTION (VPS Docker, tunnel, workers)
 │
 ├── decisions/           ← Décisions d'évolution (ADR)
 │   ├── README.md             Index des ADR + conventions
 │   ├── ADR_0001_*.md         QG unifié (supervision)
 │   ├── ADR_0002_*.md         Gestion distante des chatbots
-│   └── ADR_0003_*.md         Défense en profondeur multi-tenant (RLS)
+│   ├── ADR_0003_*.md         Défense en profondeur multi-tenant (RLS)
+│   └── ADR_0004_*.md         Fix ingress tunnel Cloudflare (4000→3001, appliqué)
 │
 ├── depart_docs/         ← Documentation historique du projet (ex 00_DEPART_DOCS)
 │   ├── 00_COMMENCER_ICI/     Prise en main rapide
@@ -55,7 +58,9 @@ bibliotheque/
 | Comprendre vite le projet | `audit/INITIAL_ANALYSIS.md` puis `architecture/ARCHITECTURE.md` |
 | Voir les risques de sécurité | `audit/SECURITY_REVIEW.md` |
 | Comprendre l'écosystème (3 systèmes) | `audit/SYSTEM_MAP.md` |
-| Faire évoluer le QG / la gestion des bots | `decisions/` (ADR) |
+| Comprendre la PROD (VPS, tunnel, workers) | `architecture/VPS_DEPLOYMENT_MAP.md` |
+| Faire évoluer le QG / la gestion des bots | `decisions/` (ADR) puis `ROADMAP_QG_REMOTE_CONTROL.md` |
+| Voir le plan des features à venir | `ROADMAP_QG_REMOTE_CONTROL.md` |
 | Déployer en production | `depart_docs/03_DEPLOIEMENT_ET_PROD/` |
 
 ---
@@ -162,3 +167,22 @@ Détail complet : `handoff/CHATGPT_LIS_ABSOLUMENT.md`.
 | `ORACLESENTINEL_CONFIG.txt` (racine) | Dump de secrets local (gitignoré). On ne range pas de secrets dans la doc. |
 | `src/**`, `server/**` | Code source : déplacé = builds/imports cassés. Cartographié ci-dessus à la place. |
 | `Chatbot/`, `ai-chat-agent-main/` | Copies/variantes de travail — non documentaires, laissées intactes. |
+
+---
+
+## 7. Rangement — état & recommandations (validation requise avant suppression)
+
+> Inventaire du « désordre » à la racine. **Rien n'est supprimé sans ton OK** (règle handoff).
+
+| Élément | Constat | Recommandation |
+|---|---|---|
+| `.env.backup.*` (×10, racine) | Gitignorés. Contiennent d'**anciens secrets** (.env historisés). | **Hygiène** : supprimer en local (le `.env` courant fait foi). À faire sur ton OK. |
+| `ORACLESENTINEL_CONFIG.txt` | Dump de secrets, gitignoré. | Garder hors repo ; ne pas committer. Idéalement migrer vers un coffre. |
+| `index.html`, `dashboard.html` | Entrées Vite (widget + QG). | **Garder** (nécessaires au build). |
+| `factory-dashboard.html` | Non référencé par le build vérifié. | À **vérifier** : si inutilisé, archiver. Ne pas supprimer sans confirmation. |
+| `Chatbot/` | V1 obsolète (sous-module). | Ne pas committer, ne pas lancer. Source de confusion historique (cf. fix port 3001). |
+| `ai-chat-agent-main/` | Variante de travail. | Hors périmètre ; laisser intacte. |
+
+État du dépôt : working tree **propre** (hors sous-module `Chatbot`). La doc est centralisée ici.
+
+> Pour exécuter le nettoyage sûr (supprimer les `.env.backup.*` locaux), demande-le explicitement.
