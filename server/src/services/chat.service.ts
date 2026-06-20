@@ -11,6 +11,7 @@ import { getCRMConnector, CdmLead } from "./crm";
 import { CatalogService } from "./catalog.service";
 
 import { getSystemPrompt } from "../core/prompts";
+import { getEffectiveIdentityPromptBlock } from "./tenant-config.service";
 import { debugLog } from "../utils/debug-log";
 
 // Response type with RAG and qualification metadata
@@ -348,6 +349,29 @@ export class ChatService {
         "{DYNAMIC_VARIABLES}",
         VariablesService.getFormattedContext(),
       ).replace("{CHAT_TURN_HINT}", chatTurnHint);
+
+      // Per-agency identity/personality override (Command Center, Phase 2 B).
+      // Appended AFTER the global prompt so it takes precedence. Returns "" when
+      // this tenant has no override → prompt is byte-identical to before.
+      // Never throws: a tenant-config issue must never break the chat.
+      try {
+        const tenantBlock =
+          await getEffectiveIdentityPromptBlock(effectiveTenantId);
+        if (tenantBlock) {
+          systemPromptWithVars += tenantBlock;
+          debugLog("chat.tenant.override.applied", {
+            requestId,
+            tenantId: effectiveTenantId,
+            blockChars: tenantBlock.length,
+          });
+        }
+      } catch (err: any) {
+        debugLog("chat.tenant.override.skipped", {
+          requestId,
+          tenantId: effectiveTenantId,
+          error: err?.message,
+        });
+      }
 
       // Inject qualification awareness: if we have prior history, run a quick
       // qualification check so the LLM knows what data is still missing.
