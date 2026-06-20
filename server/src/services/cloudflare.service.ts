@@ -92,22 +92,39 @@ function workerUrl(name: string): string | null {
 }
 
 async function cfApi<T = any>(path: string): Promise<T> {
-  const res = await fetch(`${CF_API}${path}`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
-  });
-  const json: any = await res.json().catch(() => ({}));
-  if (!res.ok || json?.success === false) {
-    const msg =
-      (json?.errors || []).map((e: any) => e?.message).filter(Boolean).join("; ") ||
-      `Cloudflare API HTTP ${res.status}`;
-    throw new Error(msg);
+  // Retry once on transient network failures (e.g. cold-start "fetch failed",
+  // DNS hiccup). API error RESPONSES (4xx/5xx with a CF message) are NOT retried.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${CF_API}${path}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      });
+      const json: any = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        const msg =
+          (json?.errors || []).map((e: any) => e?.message).filter(Boolean).join("; ") ||
+          `Cloudflare API HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return json.result as T;
+    } catch (err) {
+      lastErr = err;
+      const msg = String((err as any)?.message || "");
+      const transient = /fetch failed|network|timeout|aborted|ECONN|EAI_AGAIN|ENOTFOUND/i.test(msg);
+      if (attempt === 0 && transient) {
+        await new Promise((r) => setTimeout(r, 600));
+        continue;
+      }
+      throw err;
+    }
   }
-  return json.result as T;
+  throw lastErr;
 }
 
 /** Health-ping a worker URL: real HTTP reachability + latency. Never throws. */
