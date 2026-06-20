@@ -11,9 +11,10 @@
 // ============================================================================
 
 import { Router, Request, Response } from "express";
+import express from "express";
 import fs from "fs";
 import path from "path";
-import { requireAdminSession } from "../middleware/admin-session";
+import { requireAdminSession, requireCSRF } from "../middleware/admin-session";
 import { collectInfraSnapshot } from "../services/infra-monitor.service";
 import { collectFleetSnapshot } from "../services/fleet.service";
 import { collectSurveillanceSnapshot } from "../services/surveillance.service";
@@ -22,6 +23,12 @@ import {
   getWorkerDetail,
   isValidWorkerName,
 } from "../services/cloudflare.service";
+import {
+  getTenantConfig,
+  saveTenantOverride,
+  getTenantConfigVersions,
+  rollbackTenantConfig,
+} from "../services/tenant-config.service";
 
 // ── Page handler (mirrors factory-ui.routes / admin.routes) ──────────────────
 
@@ -162,5 +169,123 @@ router.get("/workers/:name", requireAdminSession(), async (req, res) => {
       .json({ success: false, error: "Worker detail failed" });
   }
 });
+
+// ── Per-tenant config (Phase 2 Option B — per-agency overrides) ──────────────
+// READ is safe; WRITE (PUT/rollback) requires CSRF. These endpoints only store
+// a whitelisted, non-secret override (branding name + personality). Until the
+// runtime wiring step, saving here does NOT change any bot's behavior.
+
+function isValidTenantId(id: string): boolean {
+  return /^[a-zA-Z0-9_.-]{1,100}$/.test(id);
+}
+
+router.get(
+  "/tenants/:tenantId/config",
+  requireAdminSession(),
+  async (req, res) => {
+    const tenantId = String(req.params.tenantId || "");
+    if (!isValidTenantId(tenantId)) {
+      return res.status(400).json({ success: false, error: "Invalid tenant id" });
+    }
+    try {
+      const record = await getTenantConfig(tenantId);
+      // Global defaults (for display in the editor as placeholders).
+      let defaults: any = null;
+      try {
+        const { loadCurrentConfig } = await import("../factory");
+        const g = loadCurrentConfig();
+        defaults = {
+          branding: {
+            agentName: g.branding?.agentName ?? null,
+            agencyName: g.branding?.agencyName ?? null,
+          },
+          personality: {
+            writingStyle: g.personality?.writingStyle ?? null,
+            toneOfVoice: g.personality?.toneOfVoice ?? null,
+            maxResponseWords: g.personality?.maxResponseWords ?? null,
+            language: g.personality?.language ?? null,
+          },
+        };
+      } catch {
+        /* defaults are best-effort */
+      }
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, ...record, defaults });
+    } catch (err: any) {
+      console.error("[Command Center] tenant config get failed:", err?.message);
+      return res.status(500).json({ success: false, error: "Tenant config failed" });
+    }
+  },
+);
+
+router.put(
+  "/tenants/:tenantId/config",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "64kb" }),
+  async (req, res) => {
+    const tenantId = String(req.params.tenantId || "");
+    if (!isValidTenantId(tenantId)) {
+      return res.status(400).json({ success: false, error: "Invalid tenant id" });
+    }
+    try {
+      const payload = req.body?.override ?? req.body;
+      const record = await saveTenantOverride(tenantId, payload, "admin");
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, ...record });
+    } catch (err: any) {
+      console.error("[Command Center] tenant config save failed:", err?.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Tenant config save failed" });
+    }
+  },
+);
+
+router.get(
+  "/tenants/:tenantId/config/versions",
+  requireAdminSession(),
+  async (req, res) => {
+    const tenantId = String(req.params.tenantId || "");
+    if (!isValidTenantId(tenantId)) {
+      return res.status(400).json({ success: false, error: "Invalid tenant id" });
+    }
+    try {
+      const versions = await getTenantConfigVersions(tenantId, 20);
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, versions });
+    } catch (err: any) {
+      return res
+        .status(500)
+        .json({ success: false, error: "Tenant versions failed" });
+    }
+  },
+);
+
+router.post(
+  "/tenants/:tenantId/config/rollback",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "4kb" }),
+  async (req, res) => {
+    const tenantId = String(req.params.tenantId || "");
+    if (!isValidTenantId(tenantId)) {
+      return res.status(400).json({ success: false, error: "Invalid tenant id" });
+    }
+    const versionId = Number(req.body?.versionId);
+    if (!Number.isFinite(versionId) || versionId <= 0) {
+      return res.status(400).json({ success: false, error: "Invalid versionId" });
+    }
+    try {
+      const record = await rollbackTenantConfig(tenantId, versionId, "admin");
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, ...record });
+    } catch (err: any) {
+      return res
+        .status(422)
+        .json({ success: false, error: err?.message || "Rollback failed" });
+    }
+  },
+);
 
 export default router;

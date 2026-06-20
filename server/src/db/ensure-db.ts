@@ -175,6 +175,27 @@ CREATE INDEX IF NOT EXISTS idx_catalog_properties_tenant_price ON catalog_proper
 CREATE INDEX IF NOT EXISTS idx_catalog_properties_tenant_date_maj ON catalog_properties (tenant_id, date_maj DESC);
 CREATE INDEX IF NOT EXISTS idx_catalog_properties_search_tsv ON catalog_properties USING GIN (search_tsv);
 CREATE INDEX IF NOT EXISTS idx_catalog_properties_flags ON catalog_properties USING GIN (flags);
+
+-- ── Per-tenant configuration overrides (Command Center, Phase 2 Option B) ──
+-- Effective config = global AgentConfig (.env) + this tenant's partial override.
+-- overrides JSONB only ever holds NON-SECRET fields (branding + personality).
+CREATE TABLE IF NOT EXISTS tenant_configs (
+    tenant_id VARCHAR(100) PRIMARY KEY,
+    overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_by VARCHAR(120)
+);
+
+-- Append-only history of overrides for audit + rollback.
+CREATE TABLE IF NOT EXISTS tenant_config_versions (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id VARCHAR(100) NOT NULL,
+    overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by VARCHAR(120)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_config_versions_tenant_created ON tenant_config_versions (tenant_id, created_at DESC);
 `;
 
 export async function ensureDbSchema(): Promise<void> {

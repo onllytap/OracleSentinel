@@ -15,9 +15,11 @@ import {
   MessageSquare,
   Radio,
   RefreshCw,
+  Save,
   Search,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -563,6 +565,191 @@ function OverviewView({ nonce }: { nonce: number }) {
   );
 }
 
+// ── Per-agency config editor (Phase 2 Option B) ──────────────────────────────
+
+const TC_SELECT =
+  "h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+const TC_TEXTAREA =
+  "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+
+const WRITING_STYLE_OPTS: [string, string][] = [
+  ["", "(défaut global)"],
+  ["professional", "Professionnel"],
+  ["friendly", "Amical"],
+  ["casual", "Décontracté"],
+  ["formal", "Formel"],
+  ["technical", "Technique"],
+];
+const TONE_OPTS: [string, string][] = [
+  ["", "(défaut global)"],
+  ["warm", "Chaleureux"],
+  ["neutral", "Neutre"],
+  ["authoritative", "Qui fait autorité"],
+  ["empathetic", "Empathique"],
+  ["direct", "Direct"],
+];
+
+function TenantConfigEditor({ tenantId }: { tenantId: string }) {
+  const [data, setData] = useState<any | null>(null);
+  const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const [agentName, setAgentName] = useState("");
+  const [agencyName, setAgencyName] = useState("");
+  const [writingStyle, setWritingStyle] = useState("");
+  const [toneOfVoice, setToneOfVoice] = useState("");
+  const [maxWords, setMaxWords] = useState("");
+  const [language, setLanguage] = useState("");
+  const [modifiers, setModifiers] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    setErr("");
+    setSaved(false);
+    getJSON(`/api/priv/tenants/${encodeURIComponent(tenantId)}/config`)
+      .then((d: any) => {
+        if (!alive) return;
+        setData(d);
+        const o = d.override || {};
+        setAgentName(o.branding?.agentName || "");
+        setAgencyName(o.branding?.agencyName || "");
+        setWritingStyle(o.personality?.writingStyle || "");
+        setToneOfVoice(o.personality?.toneOfVoice || "");
+        setMaxWords(
+          o.personality?.maxResponseWords != null
+            ? String(o.personality.maxResponseWords)
+            : "",
+        );
+        setLanguage(o.personality?.language || "");
+        setModifiers((o.personality?.systemPromptModifiers || []).join("\n"));
+      })
+      .catch((e) => alive && setErr(e?.message || "Erreur"));
+    return () => {
+      alive = false;
+    };
+  }, [tenantId]);
+
+  const save = async () => {
+    setSaving(true);
+    setErr("");
+    setSaved(false);
+    const override = {
+      branding: {
+        agentName: agentName.trim(),
+        agencyName: agencyName.trim(),
+      },
+      personality: {
+        writingStyle: writingStyle || undefined,
+        toneOfVoice: toneOfVoice || undefined,
+        maxResponseWords: maxWords ? Number(maxWords) : undefined,
+        language: language.trim() || undefined,
+        systemPromptModifiers: modifiers
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      },
+    };
+    try {
+      const res = await apiFetch(
+        `/api/priv/tenants/${encodeURIComponent(tenantId)}/config`,
+        { method: "PUT", body: JSON.stringify({ override }) },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = await res.json();
+      setData(d);
+      setSaved(true);
+    } catch (e: any) {
+      setErr(e?.message || "Échec de l'enregistrement");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const defaults = data?.defaults || {};
+  const ph = (v: any) => (v ? `défaut : ${v}` : "défaut global");
+
+  return (
+    <div className="space-y-3 rounded-lg border border-primary/20 bg-card/40 p-3">
+      <div className="flex items-center gap-2">
+        <SlidersHorizontal className="size-4 text-primary" />
+        <span className="text-sm font-medium">Configuration de l'agence</span>
+        <Badge variant="outline" className="ml-auto text-[10px]">
+          par agence
+        </Badge>
+      </div>
+
+      {err && <p className="text-xs text-destructive">{err}</p>}
+
+      {!data ? (
+        <Skeleton className="h-44 w-full" />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Nom de l'agent</span>
+              <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder={ph(defaults.branding?.agentName)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Nom de l'agence</span>
+              <Input value={agencyName} onChange={(e) => setAgencyName(e.target.value)} placeholder={ph(defaults.branding?.agencyName)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Style d'écriture</span>
+              <select className={TC_SELECT} value={writingStyle} onChange={(e) => setWritingStyle(e.target.value)}>
+                {WRITING_STYLE_OPTS.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Ton</span>
+              <select className={TC_SELECT} value={toneOfVoice} onChange={(e) => setToneOfVoice(e.target.value)}>
+                {TONE_OPTS.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Max mots / réponse</span>
+              <Input type="number" value={maxWords} onChange={(e) => setMaxWords(e.target.value)} placeholder={ph(defaults.personality?.maxResponseWords)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Langue</span>
+              <Input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder={ph(defaults.personality?.language)} />
+            </label>
+          </div>
+
+          <label className="block space-y-1">
+            <span className="text-xs text-muted-foreground">Instructions de prompt (une par ligne)</span>
+            <textarea
+              className={TC_TEXTAREA}
+              rows={3}
+              value={modifiers}
+              onChange={(e) => setModifiers(e.target.value)}
+              placeholder="Ex : Mets en avant nos biens neufs. Propose toujours une visite."
+            />
+          </label>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={save} disabled={saving}>
+              <Save className="size-4" /> {saving ? "Enregistrement…" : "Enregistrer"}
+            </Button>
+            {saved && <span className="text-xs text-emerald-400">Enregistré ✓</span>}
+            {data.updatedAt && (
+              <span className="ml-auto text-[10px] text-muted-foreground">maj {fmtDate(data.updatedAt)}</span>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Champs vides = valeur globale par défaut. Ces réglages ne concernent que cette agence.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Bot detail dialog ────────────────────────────────────────────────────────
 
 function BotDetail({
@@ -664,6 +851,8 @@ function BotDetail({
             <span>{fmtDate(lastActivity)}</span>
           </div>
         </div>
+
+        <TenantConfigEditor tenantId={bot.tenant_id} />
 
         {err && <p className="text-sm text-destructive">{err}</p>}
 
