@@ -190,6 +190,23 @@ Tout est centralisé dans **[`bibliotheque/`](bibliotheque/README.md)** :
 
 ---
 
+## 🩺 Dépannage
+
+**CI GitHub Actions en échec — « account is locked due to a billing issue »**
+Les workflows ne **démarrent pas** tant que la facturation GitHub Actions du compte n'est pas
+régularisée (minutes gratuites épuisées, moyen de paiement, ou limite de dépense atteinte).
+Ce n'est **pas** un problème de code (les jobs échouent en 2-3 s sans exécuter la moindre étape).
+→ Régler sur **https://github.com/settings/billing**, puis relancer les workflows.
+En local, la référence reste `npm run verify` (racine **et** `server/`).
+
+**Sentry ne capture rien**
+Renseigner le DSN du projet Sentry (clé *publiable*, non secrète) :
+- Backend : `SENTRY_DSN=...` dans le `.env` racine (chargé par `server/src/env.ts`).
+- Frontend : `VITE_SENTRY_DSN=...` dans le `.env` racine (lu par Vite).
+
+Sans DSN, `Sentry.init()` est volontairement ignoré (aucune erreur). En production, définir ces
+variables dans l'environnement du conteneur/VPS.
+
 ## 🤝 Contribution
 
 - Une **branche par chantier**, jamais de push direct sur `main`.
