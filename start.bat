@@ -40,6 +40,26 @@ if not exist "build\dashboard.html" (
   echo.
 )
 
+:: ----------------------------------------------------------------------------
+:: Liberer le port 3001 avant de lancer la V2.
+:: Une ancienne V1 (.\Chatbot\server) ou un process tsx obsolete peut squatter
+:: le port 3001 et repondre a la place de la V2 (=> /qg et /priv en 404).
+:: On tue donc tout process LISTENING sur 3001 avant de demarrer le backend.
+:: ----------------------------------------------------------------------------
+echo [INFO] Verification du port 3001...
+set "PORT_BUSY="
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr "LISTENING" ^| findstr ":3001 "') do (
+  set "PORT_BUSY=1"
+  echo [INFO] Port 3001 occupe par PID %%P ^(process obsolete^) -- arret en cours
+  taskkill /F /PID %%P >nul 2>&1
+)
+if defined PORT_BUSY (
+  echo [INFO] Port 3001 libere.
+  timeout /t 2 /nobreak >nul
+) else (
+  echo [INFO] Port 3001 libre.
+)
+
 echo [1/2] Backend  -^> http://localhost:3001
 start "OracleSentinel Backend (3001)" /D "%ROOT_DIR%\server" cmd /k "npm run dev"
 
