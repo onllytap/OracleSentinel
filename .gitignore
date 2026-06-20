@@ -65,3 +65,6 @@ Thumbs.db
 
 # Server logs (already matched by *.log above; listed explicitly for clarity)
 server.log
+
+# MCP config peut contenir des tokens/PAT (Sentry, GitHub) — ne jamais committer
+.kiro/settings/mcp.json
