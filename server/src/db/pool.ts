@@ -57,6 +57,14 @@ export function resolveDbSslConfig(
     databaseUrl: string,
     env: NodeJS.ProcessEnv = process.env,
 ): DbSslConfig | undefined {
+    // Explicit opt-out: honour libpq's sslmode=disable. Needed for a local
+    // Docker Postgres reached via a non-localhost service hostname (e.g.
+    // "oraclesentinel-db") that does not speak TLS — otherwise the non-localhost
+    // heuristic below would wrongly force TLS and break the connection.
+    if (/sslmode=disable/i.test(databaseUrl)) {
+        return undefined;
+    }
+
     const tlsRequired =
         /sslmode=require/i.test(databaseUrl) ||
         !/localhost|127\.0\.0\.1/.test(databaseUrl);
