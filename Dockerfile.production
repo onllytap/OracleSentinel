@@ -64,7 +64,7 @@ RUN npm install -g esbuild && \
       --external:express-rate-limit \
       --external:cors \
       --external:helmet \
-      --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);"
+      --banner:js="import { createRequire } from 'module'; import { fileURLToPath } from 'url'; import { dirname } from 'path'; const require = createRequire(import.meta.url); const __filename = fileURLToPath(import.meta.url); const __dirname = dirname(__filename);"
 
 # Verify build succeeded
 RUN test -f dist/index.js || (echo "ERROR: Backend compilation failed" && exit 1)
