@@ -264,7 +264,7 @@ export async function buildRegistrationOptions(): Promise<PublicKeyCredentialCre
     })),
     authenticatorSelection: {
       residentKey: "preferred",
-      userVerification: "preferred",
+      userVerification: "required",
     },
   });
 }
@@ -281,7 +281,7 @@ export async function confirmRegistration(opts: {
       expectedChallenge: opts.expectedChallenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.registrationInfo) {
@@ -315,7 +315,7 @@ export async function buildAuthenticationOptions(): Promise<PublicKeyCredentialR
 
   return await generateAuthenticationOptions({
     rpID,
-    userVerification: "preferred",
+    userVerification: "required",
     // If we know the registered credentials, hint them so compatible browsers
     // surface the right authenticator. Empty list => the client lets the user
     // pick a discoverable credential.
@@ -355,7 +355,7 @@ export async function confirmAuthentication(opts: {
       expectedOrigin: origin,
       expectedRPID: rpID,
       credential,
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified) {

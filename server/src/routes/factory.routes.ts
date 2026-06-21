@@ -34,6 +34,7 @@ import type { AgentConfig } from "../factory";
 import { CatalogImportService } from "../services/catalog-import.service";
 import { pool } from "../db/pool";
 import { FactoryBuildHistoryService } from "../services/factory-build-history.service";
+import { seedTenantConfigsFromFactory } from "../services/tenant-config.service";
 import {
   validateBody,
   validateQuery,
@@ -96,12 +97,23 @@ router.put(
       // Save
       const result = saveConfig(newConfig);
 
+      // Bridge → QG: mirror the deployed identity/personality into each tenant's
+      // Command Center override (gap-fill only, never clobbers manual QG edits)
+      // so the QG shows the REAL deployed values and the runtime applies them.
+      let seededTenants: string[] = [];
+      try {
+        seededTenants = await seedTenantConfigsFromFactory(newConfig);
+      } catch (seedErr: any) {
+        console.error("[Factory] tenant config seed failed:", seedErr?.message);
+      }
+
       return res.json({
         success: true,
         path: result.path,
         backup: result.backup,
         changes: diffs.length,
         diffs,
+        seededTenants,
       });
     } catch (err: any) {
       console.error("[Factory] Failed to save config:", err);

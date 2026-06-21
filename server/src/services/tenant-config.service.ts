@@ -18,6 +18,7 @@
 // ============================================================================
 
 import { pool } from "../db/pool";
+import type { AgentConfig } from "../factory/types";
 
 export const WRITING_STYLES = [
   "professional",
@@ -356,4 +357,96 @@ export async function rollbackTenantConfig(
     throw new Error("Version introuvable pour ce tenant");
   }
   return saveTenantOverride(tenantId, r.rows[0].overrides, updatedBy);
+}
+
+
+// ============================================================================
+// Factory → QG bridge
+// ============================================================================
+// When an agent is deployed via /factory (PUT /config), mirror the deployed
+// identity/personality into each tenant's override so the Command Center shows
+// the REAL deployed values (not blanks) and the runtime applies them.
+//
+// MERGE RULE: an existing QG-set value is NEVER overwritten — we only fill
+// gaps. So re-deploying fills missing fields without clobbering manual QG edits.
+
+const SEED_TENANT_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/;
+
+/** Derive a whitelisted TenantOverride from a full (global) AgentConfig. */
+export function buildOverrideFromAgentConfig(config: AgentConfig): TenantOverride {
+  return sanitizeOverride({
+    branding: {
+      agentName: config?.branding?.agentName,
+      agencyName: config?.branding?.agencyName,
+    },
+    personality: {
+      writingStyle: config?.personality?.writingStyle,
+      toneOfVoice: config?.personality?.toneOfVoice,
+      maxResponseWords: config?.personality?.maxResponseWords,
+      language: config?.personality?.language,
+      systemPromptModifiers: config?.personality?.systemPromptModifiers,
+    },
+  });
+}
+
+/** Merge two overrides, preferring EXISTING (QG) values; incoming only fills gaps. */
+function mergeOverridePreferExisting(
+  existing: TenantOverride | null,
+  incoming: TenantOverride,
+): TenantOverride {
+  const e = existing ?? {};
+  return sanitizeOverride({
+    branding: {
+      agentName: e.branding?.agentName ?? incoming.branding?.agentName,
+      agencyName: e.branding?.agencyName ?? incoming.branding?.agencyName,
+    },
+    personality: {
+      writingStyle: e.personality?.writingStyle ?? incoming.personality?.writingStyle,
+      toneOfVoice: e.personality?.toneOfVoice ?? incoming.personality?.toneOfVoice,
+      maxResponseWords:
+        e.personality?.maxResponseWords ?? incoming.personality?.maxResponseWords,
+      language: e.personality?.language ?? incoming.personality?.language,
+      systemPromptModifiers: e.personality?.systemPromptModifiers?.length
+        ? e.personality.systemPromptModifiers
+        : incoming.personality?.systemPromptModifiers,
+    },
+  });
+}
+
+/**
+ * Seed/refresh per-tenant overrides from a deployed AgentConfig. Targets every
+ * tenant in security.widgetTenantMap plus "default". Never clobbers existing QG
+ * values (gap-fill only) and skips tenants whose effective override is
+ * unchanged (no redundant version rows). Best-effort per tenant; never throws.
+ * Returns the list of tenant ids that were written.
+ */
+export async function seedTenantConfigsFromFactory(
+  config: AgentConfig,
+): Promise<string[]> {
+  const incoming = buildOverrideFromAgentConfig(config);
+  if (isEmptyOverride(incoming)) return [];
+
+  const tenants = new Set<string>(["default"]);
+  const map = config?.security?.widgetTenantMap ?? {};
+  for (const tid of Object.values(map)) {
+    if (typeof tid === "string" && SEED_TENANT_ID_RE.test(tid.trim())) {
+      tenants.add(tid.trim());
+    }
+  }
+
+  const seeded: string[] = [];
+  for (const tenantId of tenants) {
+    try {
+      const existing = await getTenantOverride(tenantId);
+      const merged = mergeOverridePreferExisting(existing, incoming);
+      if (isEmptyOverride(merged)) continue;
+      // Skip when nothing actually changes → avoids redundant version rows.
+      if (existing && JSON.stringify(existing) === JSON.stringify(merged)) continue;
+      await saveTenantOverride(tenantId, merged, "factory");
+      seeded.push(tenantId);
+    } catch {
+      // best-effort: skip this tenant on any error (never break a deploy)
+    }
+  }
+  return seeded;
 }

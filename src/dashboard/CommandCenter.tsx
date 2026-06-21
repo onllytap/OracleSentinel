@@ -14,6 +14,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessageSquare,
   Plus,
   Radio,
@@ -383,14 +384,33 @@ function Sidebar({
   setView,
   onLogout,
   health,
+  open = false,
+  onClose,
 }: {
   view: View;
   setView: (v: View) => void;
   onLogout: () => void;
   health: number | null;
+  open?: boolean;
+  onClose?: () => void;
 }) {
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-4">
+    <>
+      {/* Mobile backdrop */}
+      <div
+        className={cn(
+          "fixed inset-0 z-40 bg-black/50 md:hidden",
+          open ? "block" : "hidden",
+        )}
+        onClick={onClose}
+        aria-hidden
+      />
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar p-4 transition-transform duration-200 md:static md:z-auto md:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+        )}
+      >
       <div className="mb-6 flex items-center gap-2 px-2">
         <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
           OS
@@ -409,7 +429,10 @@ function Sidebar({
               key={item.id}
               variant={active ? "secondary" : "ghost"}
               className={cn("justify-start gap-3", active && "font-semibold")}
-              onClick={() => setView(item.id)}
+              onClick={() => {
+                setView(item.id);
+                onClose?.();
+              }}
             >
               <Icon className="size-4" />
               {item.label}
@@ -454,6 +477,7 @@ function Sidebar({
         </Button>
       </div>
     </aside>
+    </>
   );
 }
 
@@ -803,6 +827,15 @@ const TONE_OPTS: [string, string][] = [
   ["direct", "Direct"],
 ];
 
+function DInfo({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="max-w-[60%] truncate text-right">{value}</span>
+    </div>
+  );
+}
+
 function TenantConfigEditor({ tenantId }: { tenantId: string }) {
   const [data, setData] = useState<any | null>(null);
   const [err, setErr] = useState("");
@@ -826,18 +859,26 @@ function TenantConfigEditor({ tenantId }: { tenantId: string }) {
       .then((d: any) => {
         if (!alive) return;
         setData(d);
+        // Pre-fill from the tenant override when present, else from the REAL
+        // deployed (global) config — so the editor shows actual values, never blank.
         const o = d.override || {};
-        setAgentName(o.branding?.agentName || "");
-        setAgencyName(o.branding?.agencyName || "");
-        setWritingStyle(o.personality?.writingStyle || "");
-        setToneOfVoice(o.personality?.toneOfVoice || "");
-        setMaxWords(
-          o.personality?.maxResponseWords != null
-            ? String(o.personality.maxResponseWords)
-            : "",
-        );
-        setLanguage(o.personality?.language || "");
-        setModifiers((o.personality?.systemPromptModifiers || []).join("\n"));
+        const def = d.defaults || {};
+        const ob = o.branding || {};
+        const db = def.branding || {};
+        const op = o.personality || {};
+        const dp = def.personality || {};
+        setAgentName(ob.agentName ?? db.agentName ?? "");
+        setAgencyName(ob.agencyName ?? db.agencyName ?? "");
+        setWritingStyle(op.writingStyle ?? dp.writingStyle ?? "");
+        setToneOfVoice(op.toneOfVoice ?? dp.toneOfVoice ?? "");
+        const mw = op.maxResponseWords ?? dp.maxResponseWords;
+        setMaxWords(mw != null ? String(mw) : "");
+        setLanguage(op.language ?? dp.language ?? "");
+        const mods =
+          (op.systemPromptModifiers && op.systemPromptModifiers.length
+            ? op.systemPromptModifiers
+            : dp.systemPromptModifiers) || [];
+        setModifiers(mods.join("\n"));
       })
       .catch((e) => alive && setErr(e?.message || "Erreur"));
     return () => {
@@ -900,7 +941,7 @@ function TenantConfigEditor({ tenantId }: { tenantId: string }) {
         <Skeleton className="h-44 w-full" />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="space-y-1">
               <span className="text-xs text-muted-foreground">Nom de l'agent</span>
               <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder={ph(defaults.branding?.agentName)} />
@@ -958,6 +999,48 @@ function TenantConfigEditor({ tenantId }: { tenantId: string }) {
           <p className="text-[10px] text-muted-foreground">
             Champs vides = valeur globale par défaut. Ces réglages ne concernent que cette agence.
           </p>
+
+          <details className="rounded-lg border bg-muted/20 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+              Ce que sait ce bot (config déployée)
+            </summary>
+            <div className="mt-2 space-y-1.5 text-xs">
+              <DInfo label="Domaine" value={defaults.domain || "—"} />
+              <DInfo label="Langue" value={defaults.personality?.language || "—"} />
+              <DInfo label="CRM" value={defaults.crmProvider || "none"} />
+              <DInfo
+                label="Sources (knowledge)"
+                value={
+                  (defaults.knowledgeUrls || []).length
+                    ? `${(defaults.knowledgeUrls || []).length} URL(s)`
+                    : "—"
+                }
+              />
+              {defaults.variables && Object.keys(defaults.variables).length > 0 && (
+                <div className="space-y-1 pt-1">
+                  <span className="text-muted-foreground">Variables d'agence</span>
+                  <div className="grid gap-1 rounded-md bg-card/60 p-2 font-mono text-[10px]">
+                    {Object.entries(defaults.variables).map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-2">
+                        <span className="text-muted-foreground">{k.replace(/^VAR_/, "")}</span>
+                        <span className="max-w-[60%] truncate">{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </details>
+
+          <details className="rounded-lg border bg-muted/20 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+              Aperçu du prompt effectif (ce que reçoit l'IA)
+            </summary>
+            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-card/60 p-2 text-[10px] leading-relaxed text-muted-foreground">
+{(data.effectivePromptBlock || "").trim() ||
+  "Aucune personnalisation active : ce bot utilise le prompt global standard de son domaine."}
+            </pre>
+          </details>
         </>
       )}
     </div>
@@ -2208,6 +2291,7 @@ export function CommandCenter() {
   const [nonce, setNonce] = useState(0);
   const [health, setHealth] = useState<number | null>(null);
   const [selected, setSelected] = useState<any | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     checkSession().then(setAuthed);
@@ -2262,27 +2346,43 @@ export function CommandCenter() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar view={view} setView={setView} onLogout={handleLogout} health={health} />
-      <main className="flex-1 overflow-y-auto">
-        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/80 px-6 py-4 backdrop-blur">
-          <div>
-            <h2 className="text-base font-semibold">{title}</h2>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Sidebar
+        view={view}
+        setView={setView}
+        onLogout={handleLogout}
+        health={health}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Ouvrir le menu"
+          >
+            <Menu className="size-5" />
+          </Button>
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold">{title}</h2>
+            <p className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
               <span>OracleSentinel ·</span>
               <FlipWords words={["surveillance", "closing", "monitoring", "automation"]} className="font-semibold" />
               <span>· 350+ agences</span>
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Badge variant="outline" className="gap-1.5">
+            <Badge variant="outline" className="hidden gap-1.5 sm:inline-flex">
               <ShieldCheck className="size-3" /> Session sécurisée
             </Badge>
             <GradientButton onClick={() => setNonce((n) => n + 1)}>
-              <RefreshCw className="size-4" /> Rafraîchir
+              <RefreshCw className="size-4" /> <span className="hidden sm:inline">Rafraîchir</span>
             </GradientButton>
           </div>
         </header>
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {view === "overview" && <OverviewView nonce={nonce} />}
           {view === "chatbots" && <ChatbotsView nonce={nonce} />}
           {view === "surveillance" && <SurveillanceView nonce={nonce} onSelect={setSelected} />}

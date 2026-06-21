@@ -28,6 +28,7 @@ import {
   saveTenantOverride,
   getTenantConfigVersions,
   rollbackTenantConfig,
+  buildIdentityPromptBlock,
 } from "../services/tenant-config.service";
 
 // ── Page handler (mirrors factory-ui.routes / admin.routes) ──────────────────
@@ -189,7 +190,11 @@ router.get(
     }
     try {
       const record = await getTenantConfig(tenantId);
-      // Global defaults (for display in the editor as placeholders).
+      // What the bot actually appends to the prompt for this tenant (read-only
+      // preview for the QG so the admin SEES the effective instructions).
+      const effectivePromptBlock = buildIdentityPromptBlock(record.override);
+      // Deployed (global) config — non-secret slice. Used by the QG to pre-fill
+      // the editor with REAL values and to show a "what the bot knows" panel.
       let defaults: any = null;
       try {
         const { loadCurrentConfig } = await import("../factory");
@@ -198,19 +203,26 @@ router.get(
           branding: {
             agentName: g.branding?.agentName ?? null,
             agencyName: g.branding?.agencyName ?? null,
+            logoUrl: g.branding?.logoUrl ?? null,
+            primaryColor: g.branding?.themeColors?.primary ?? null,
           },
           personality: {
             writingStyle: g.personality?.writingStyle ?? null,
             toneOfVoice: g.personality?.toneOfVoice ?? null,
             maxResponseWords: g.personality?.maxResponseWords ?? null,
             language: g.personality?.language ?? null,
+            systemPromptModifiers: g.personality?.systemPromptModifiers ?? [],
           },
+          domain: process.env.BOT_DOMAIN || process.env.BOT_PROFILE || null,
+          variables: g.variables ?? {},
+          knowledgeUrls: g.knowledge?.urls ?? [],
+          crmProvider: g.crm?.provider ?? "none",
         };
       } catch {
         /* defaults are best-effort */
       }
       res.setHeader("Cache-Control", "no-store");
-      return res.json({ success: true, ...record, defaults });
+      return res.json({ success: true, ...record, defaults, effectivePromptBlock });
     } catch (err: any) {
       console.error("[Command Center] tenant config get failed:", err?.message);
       return res.status(500).json({ success: false, error: "Tenant config failed" });
