@@ -1,0 +1,31 @@
+# Snyk (https://snyk.io) policy file
+# Documents reviewed, risk-accepted findings. Each entry has an expiry so it is
+# re-evaluated rather than suppressed forever.
+version: v1.25.0
+ignore:
+  # ── R9: SSRF in the Factory webhook reachability tester ──────────────────
+  # POST /api/factory/test/webhook exists specifically to probe an
+  # operator-supplied webhook URL, so a user-controlled value MUST reach fetch
+  # by design. Static taint analysis (req.body.url -> fetch) therefore always
+  # flags it. The actual SSRF attack surface is mitigated at runtime in the
+  # handler (server/src/routes/factory.routes.ts) by, in order:
+  #   1. http/https scheme allowlist (rejects file:, gopher:, data:, ...)
+  #   2. rejection of embedded credentials (user:pass@host)
+  #   3. HTTPS-only enforcement in production
+  #   4. ssrf-guard string denylist for local/private hostnames
+  #   5. resolved-IP block of loopback/private/link-local/CGNAT + the
+  #      169.254.169.254 metadata range (defeats DNS rebinding / encoded IPs)
+  #   6. redirect:"manual" — cross-host redirects are never followed
+  #   7. 10s AbortSignal.timeout and HEAD-only probing with no response body read
+  # The endpoint is also admin-only (requireAdminSession + requireCSRF).
+  javascript/Ssrf:
+    - 'server/src/routes/factory.routes.ts':
+        reason: >-
+          Webhook reachability tester must fetch an operator-supplied URL by
+          design; SSRF is mitigated at runtime via scheme allowlist, resolved-IP
+          private/loopback/link-local/metadata-range blocking (DNS-rebinding
+          safe), no redirect following, request timeout, and no response body
+          read. Endpoint is admin-only (session + CSRF).
+        created: 2026-06-22T00:00:00.000Z
+        expires: 2026-12-22T00:00:00.000Z
+patch: {}

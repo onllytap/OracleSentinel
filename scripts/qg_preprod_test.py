@@ -458,6 +458,41 @@ def main():
     r.no_500("stripe webhook bad signature handled (no 500)", st)
     r.check("stripe webhook bad signature -> 400", st == 400, f"got {st}")
 
+    # ── 7.6 Wave 2: TOTP status / redeploy / SSRF webhook guard ──────────────
+    r.section("7.6 Wave 2 (TOTP / redeploy / SSRF guard)")
+
+    # T7 — TOTP endpoints exist, are session-gated, and NOT enrolled by default.
+    # (The ADMIN_API_KEY login itself is validated in section 1 — proving T7 did
+    #  NOT break the existing key login while TOTP is inactive.)
+    st, _ = anon.get("/api/admin/totp/status")
+    r.check("GET /api/admin/totp/status without session -> 401", st == 401, f"got {st}")
+    st, body = c.get("/api/admin/totp/status")
+    r.check("GET /api/admin/totp/status -> 200", st == 200, f"got {st}")
+    r.check("TOTP not enrolled/activated by default",
+            isinstance(body, dict) and body.get("enrolled") is False and body.get("activated") is False)
+
+    # T9 — redeploy state read + confirmation-gated, CSRF-protected trigger.
+    st, body = c.get(f"/api/priv/tenants/{TEST_TENANT}/redeploy")
+    r.check("GET tenant redeploy state -> 200", st == 200, f"got {st}")
+    r.check("redeploy state has a status",
+            isinstance(body, dict) and isinstance(body.get("state"), dict) and "status" in body["state"])
+    st, _ = c.post(f"/api/priv/tenants/{TEST_TENANT}/redeploy", {})  # missing confirm
+    r.check("redeploy WITHOUT confirm -> 400", st == 400, f"got {st}")
+    st, _ = c.post(f"/api/priv/tenants/{TEST_TENANT}/redeploy", {"confirm": True}, with_csrf=False)
+    r.check("redeploy WITHOUT csrf -> 403", st == 403, f"got {st}")
+    st, body = c.post(f"/api/priv/tenants/{TEST_TENANT}/redeploy", {"confirm": True})
+    r.no_500("redeploy with confirm handled (no 500)", st)
+    r.check("redeploy with confirm -> 200", st == 200, f"got {st}")
+
+    # T8 — SSRF guard on the webhook tester: a cloud-metadata target MUST be
+    # blocked (422), never fetched, never 500.
+    st, _ = c.post("/api/factory/test/webhook", {"url": "http://169.254.169.254/latest/meta-data/"})
+    r.no_500("SSRF metadata URL handled (no 500)", st)
+    r.check("SSRF metadata URL blocked -> 422", st == 422, f"got {st}")
+    st, _ = c.post("/api/factory/test/webhook", {"url": "file:///etc/passwd"})
+    r.no_500("SSRF file:// scheme handled (no 500)", st)
+    r.check("SSRF non-http scheme blocked -> 422", st == 422, f"got {st}")
+
     # ── 8. Optional destructive purge (test tenant only) ─────────────────────
     if args.allow_purge:
         r.section("8. Purge (test tenant only)")

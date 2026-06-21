@@ -838,75 +838,122 @@ router.post(
 );
 
 // ── POST /test/webhook — Test webhook endpoint reachability ────────────────
+// Hardened against SSRF (R9). The probe target is fully attacker-controlled, so
+// every layer below is required:
+//   1. scheme allowlist (http/https only — reject file:, gopher:, data:, ...)
+//   2. no embedded credentials (user:pass@host redirect/SSRF trick)
+//   3. HTTPS-only in production
+//   4. string denylist for obvious local/private hostnames (ssrf-guard)
+//   5. resolved-IP check that blocks loopback/private/link-local/CGNAT and the
+//      cloud-metadata range 169.254.169.254 — defeats DNS-rebinding / encoded IPs
+//   6. redirect:"manual" so a permitted host cannot 3xx to an internal target
+//   7. time-boxed (AbortSignal.timeout) and NO response body is ever read
+// Hostile/invalid input returns a 4xx with a generic message and NEVER reflects
+// internal error text or secrets; it never 500s. Valid public URLs keep the
+// original HTTP 200 + { success, status, message } contract used by the UI.
 
 router.post(
   "/test/webhook",
   express.json({ limit: "10kb" }),
   validateBody(schemas.webhookTestBody),
   async (req, res) => {
+    // 1. Parse the user-supplied URL (defense-in-depth; never throw a 500).
+    let parsed: URL;
     try {
-      const parsed = new URL(req.body.url);
+      parsed = new URL(String(req.body.url));
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid webhook URL",
+      });
+    }
 
-      if (!["http:", "https:"].includes(parsed.protocol)) {
+    // 2. Scheme allowlist — reject file:, gopher:, ftp:, data:, blob:, etc.
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return res.status(422).json({
+        success: false,
+        error: "Only HTTP(S) webhook URLs are allowed",
+      });
+    }
+
+    // Embedded credentials (user:pass@host) are a classic SSRF/redirect trick.
+    if (parsed.username || parsed.password) {
+      return res.status(422).json({
+        success: false,
+        error: "Credentials embedded in the webhook URL are not allowed",
+      });
+    }
+
+    // HTTPS-only in production.
+    if (process.env.NODE_ENV === "production" && parsed.protocol !== "https:") {
+      return res.status(422).json({
+        success: false,
+        error: "HTTPS is required in production",
+      });
+    }
+
+    // 3. Fast string denylist for obvious local / private hostnames.
+    if (isBlockedWebhookHost(parsed.hostname)) {
+      return res.status(422).json({
+        success: false,
+        error: "Local and private network targets are blocked",
+      });
+    }
+
+    // 4. Block DNS-rebinding / encoded-IP bypass: reject if the host actually
+    // resolves to a loopback/private/link-local/metadata address (e.g.
+    // 169.254.169.254). Resolution failure → reject defensively.
+    let resolvesPrivate: boolean;
+    try {
+      resolvesPrivate = await resolvesToPrivateAddress(parsed.hostname);
+    } catch {
+      resolvesPrivate = true;
+    }
+    if (resolvesPrivate) {
+      return res.status(422).json({
+        success: false,
+        error: "Host resolves to a private or non-routable address",
+      });
+    }
+
+    // 5. Time-boxed reachability probe.
+    // - HEAD only; the response body is NEVER read → no unbounded download.
+    // - redirect:"manual" so a permitted host cannot 3xx to an internal target
+    //   (e.g. cloud metadata). Any 3xx is reported, never followed.
+    // - aborted after 10s via AbortSignal.timeout.
+    try {
+      const response = await fetch(parsed.toString(), {
+        method: "HEAD",
+        signal: AbortSignal.timeout(10000),
+        redirect: "manual",
+        headers: { "User-Agent": "AgentFactory/1.0 ConnectionTest" },
+      });
+
+      // A redirect must NOT be followed (cross-host redirects are an SSRF vector).
+      // Report it as a non-success result without exposing the Location target.
+      if (response.status >= 300 && response.status < 400) {
         return res.json({
           success: false,
-          error: "Only HTTP(S) webhook URLs are allowed",
-        });
-      }
-
-      if (isBlockedWebhookHost(parsed.hostname)) {
-        return res.json({
-          success: false,
-          error: "Local and private network targets are blocked",
-        });
-      }
-
-      // Defense against DNS-rebinding / encoded-IP bypass: block if the host
-      // actually resolves to a loopback/private/link-local address.
-      if (await resolvesToPrivateAddress(parsed.hostname)) {
-        return res.json({
-          success: false,
-          error: "Host resolves to a private or non-routable address",
-        });
-      }
-
-      // Only allow HTTPS URLs in production
-      if (
-        process.env.NODE_ENV === "production" &&
-        parsed.protocol !== "https:"
-      ) {
-        return res.json({
-          success: false,
-          error: "HTTPS required in production",
-        });
-      }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      try {
-        const response = await fetch(parsed.toString(), {
-          method: "HEAD",
-          signal: controller.signal,
-          // Do NOT follow redirects: a permitted host could otherwise 3xx to an
-          // internal target (e.g. cloud metadata). Treat redirects as the result.
-          redirect: "manual",
-          headers: { "User-Agent": "AgentFactory/1.0 ConnectionTest" },
-        });
-        return res.json({
-          success: response.ok || response.status === 405,
           status: response.status,
-          message: `Endpoint responded with ${response.status}`,
+          message: `Endpoint returned a redirect (${response.status}); redirects are not followed`,
         });
-      } finally {
-        clearTimeout(timeout);
       }
+
+      // 405 = reachable but HEAD not allowed → still a successful reachability probe.
+      return res.json({
+        success: response.ok || response.status === 405,
+        status: response.status,
+        message: `Endpoint responded with ${response.status}`,
+      });
     } catch (err: any) {
-      const isAbort = err.name === "AbortError";
+      // Never reflect raw internal error text / secrets back to the caller.
+      const timedOut =
+        err?.name === "TimeoutError" || err?.name === "AbortError";
       return res.json({
         success: false,
-        error: isAbort
+        error: timedOut
           ? "Connection timed out (10s)"
-          : err.message?.slice(0, 200) || "Webhook test failed",
+          : "Webhook endpoint could not be reached",
       });
     }
   },

@@ -298,8 +298,21 @@ function cacheSet(tenantId: string, value: TenantOverride | null): void {
   cache.set(tenantId, { at: Date.now(), value });
 }
 
-/** Test/ops helper. */
-export function resetTenantConfigCache(): void {
+/**
+ * Test/ops helper — invalidate the per-tenant override cache so the NEXT read
+ * reloads from the DB. ADDITIVE & backward-compatible:
+ *   - called with no argument  → clears the WHOLE cache (unchanged behaviour
+ *     for every existing caller, incl. tests);
+ *   - called with a `tenantId` → evicts ONLY that tenant's entry. This backs
+ *     the targeted "redeploy" reload (R3.5 — affects only this tenant) so a
+ *     per-bot redeploy never disturbs the other agencies' cached config.
+ * Pure in-memory, never throws.
+ */
+export function resetTenantConfigCache(tenantId?: string): void {
+  if (typeof tenantId === "string" && tenantId.length > 0) {
+    cache.delete(tenantId);
+    return;
+  }
   cache.clear();
 }
 

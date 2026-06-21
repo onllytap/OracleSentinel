@@ -14,6 +14,15 @@ import { getSystemPrompt } from "../core/prompts";
 import { getEffectiveIdentityPromptBlock } from "./tenant-config.service";
 import { debugLog } from "../utils/debug-log";
 
+// ─── T6: additive runtime hooks — per-tenant CRM routing, billing/metering,
+// serve guard, audit. Each of these Wave-1 services is designed to NEVER throw
+// on the chat hot path (or is wrapped at the call site), so the chat always
+// degrades gracefully and never 500s. ──────────────────────────────────────
+import { pushLeadForTenant } from "./tenant-crm.service";
+import { BILLING_ENABLED, recordUsage, isOverQuota } from "./billing.service";
+import { isTenantServable } from "./tenant.service";
+import { appendAudit } from "./audit.service";
+
 // Response type with RAG and qualification metadata
 export interface ChatResponse {
   response: string;
@@ -53,6 +62,92 @@ export interface LeadFormSubmission {
   details?: string;
 }
 
+// ============================================================================
+// T6 — additive runtime hooks (per-tenant CRM routing). Module-level + exported
+// so it is unit-testable in isolation (see __tests__/chat-crm-hook.test.ts).
+// ============================================================================
+
+/**
+ * Documented sentinel returned by `pushLeadForTenant` when the per-tenant CRM
+ * SUBSYSTEM itself failed internally (DB read, decryption, or a connector that
+ * threw) — as opposed to a clean provider-side rejection. `pushLeadForTenant`
+ * swallows internal errors into this value instead of throwing, so this is the
+ * signal the spec's "on throw → fall back to the global push as a safety net"
+ * intent actually fires on. We therefore treat it like a throw: audit + fall
+ * back to the global push so a qualified lead is never dropped.
+ */
+const TENANT_CRM_SUBSYSTEM_ERROR = "tenant_crm_push_failed";
+
+/**
+ * T6 / R17 — Route a qualified lead to the TENANT's own CRM (additive hook).
+ * NEVER throws. Decision table:
+ *   - handled === false ................. { pushed:false }  → caller runs the EXISTING global push unchanged
+ *   - handled, success === true ......... { pushed:true }   → tenant CRM owns the lead; skip the global push
+ *   - handled, clean provider rejection . audit + { pushed:true }  → tenant CRM owns the lead; skip the global push
+ *   - handled, subsystem sentinel ....... audit + { pushed:false } → safety net: caller falls back to the global push
+ *   - unexpected throw .................. best-effort audit + { pushed:false } → safety net: caller falls back to global
+ *
+ * Dedup is handled downstream by the existing connectors (crm_pushed_leads);
+ * no new dedup logic is introduced here.
+ */
+export async function routeQualifiedLead(
+  tenantId: string,
+  cdmLead: CdmLead,
+  sessionId: string,
+): Promise<{ pushed: boolean }> {
+  try {
+    const { handled, result } = await pushLeadForTenant(
+      tenantId,
+      cdmLead,
+      sessionId,
+    );
+
+    // No usable per-tenant CRM → caller keeps the EXISTING global push.
+    if (!handled) {
+      return { pushed: false };
+    }
+
+    // Tenant CRM handled the push but reported a failure.
+    if (result?.success === false) {
+      await appendAudit({
+        actor: "system",
+        action: "crm.push_fail",
+        targetType: "tenant",
+        targetId: tenantId,
+        meta: { error: result?.error ?? "unknown" },
+      });
+
+      // Subsystem failure (not a clean provider rejection) → fall back to the
+      // global push as a safety net so the qualified lead is never dropped.
+      if (result?.error === TENANT_CRM_SUBSYSTEM_ERROR) {
+        return { pushed: false };
+      }
+
+      // Clean provider-side rejection → the tenant CRM owns this lead; do NOT
+      // also run the global push.
+      return { pushed: true };
+    }
+
+    // Tenant CRM handled the push successfully.
+    return { pushed: true };
+  } catch (err: any) {
+    // Safety net: NEVER throw. Best-effort audit, then let the caller run the
+    // existing global push (pushed:false).
+    try {
+      await appendAudit({
+        actor: "system",
+        action: "crm.push_fail",
+        targetType: "tenant",
+        targetId: tenantId,
+        meta: { error: err?.message ?? "route_qualified_lead_threw" },
+      });
+    } catch {
+      /* audit is best-effort and must never throw here */
+    }
+    return { pushed: false };
+  }
+}
+
 export class ChatService {
   static async processMessage(
     sessionId: string,
@@ -71,6 +166,85 @@ export class ChatService {
       sessionId,
       userMessage,
     });
+
+    // ─── T6 / R19.4 — Serve guard (FAIL-OPEN) ──────────────────────────────
+    // Refuse to serve a tenant that is explicitly suspended/archived, with a
+    // deterministic reply and NO LLM call. isTenantServable() is itself
+    // fail-open; the extra try/catch is defence-in-depth so an error here can
+    // never block the chat (→ continue normally). Placed BEFORE pool.connect()
+    // so an early return never leaks a pooled client.
+    try {
+      if (!(await isTenantServable(effectiveTenantId))) {
+        debugLog("chat.serve_guard.blocked", {
+          requestId,
+          tenantId: effectiveTenantId,
+        });
+        return {
+          response:
+            "L'assistant est momentanément indisponible. Merci de réessayer plus tard ou de contacter directement l'agence.",
+          sessionId: sessionId,
+          usedKnowledge: false,
+          sourcePages: undefined,
+          suggestedActions: [
+            { type: "contact_agent", label: "💬 Contacter un agent" },
+          ],
+          qualification: {
+            score: 0,
+            missingFields: [],
+            isComplete: false,
+            pushedToCRM: false,
+          },
+        };
+      }
+    } catch (err: any) {
+      // FAIL-OPEN: never block serving on a guard error.
+      debugLog("chat.serve_guard.skipped", {
+        requestId,
+        tenantId: effectiveTenantId,
+        error: err?.message,
+      });
+    }
+
+    // ─── T6 / R18.4 — Paywall (billing quota) ──────────────────────────────
+    // When billing is ON and the tenant is over its monthly message quota,
+    // return a deterministic reply with NO LLM call. Inert when billing is off
+    // (BILLING_ENABLED=false short-circuits before any quota lookup). Any error
+    // → continue normally.
+    try {
+      if (
+        BILLING_ENABLED &&
+        (await isOverQuota(effectiveTenantId, "message"))
+      ) {
+        debugLog("chat.paywall.blocked", {
+          requestId,
+          tenantId: effectiveTenantId,
+        });
+        return {
+          response:
+            "La limite d'utilisation de l'assistant a été atteinte pour le moment. Merci de contacter l'agence pour rétablir le service.",
+          sessionId: sessionId,
+          usedKnowledge: false,
+          sourcePages: undefined,
+          suggestedActions: [
+            { type: "contact_agent", label: "💬 Contacter un agent" },
+          ],
+          qualification: {
+            score: 0,
+            missingFields: [],
+            isComplete: false,
+            pushedToCRM: false,
+          },
+        };
+      }
+    } catch (err: any) {
+      // Never block the chat on a billing-check error.
+      debugLog("chat.paywall.skipped", {
+        requestId,
+        tenantId: effectiveTenantId,
+        error: err?.message,
+      });
+    }
+
     const client = await pool.connect();
     try {
       // 1. Upsert Conversation
@@ -914,6 +1088,20 @@ export class ChatService {
           notes: notesText,
         };
 
+        // ─── T6 / R17 — per-tenant CRM routing (additive, never throws) ───
+        // Route to the TENANT's own CRM first. When the tenant has no usable
+        // CRM (or its subsystem failed) routeQualifiedLead returns pushed:false
+        // and we run the EXISTING global push below, byte-for-byte unchanged.
+        // When the tenant CRM owns the lead it returns pushed:true and we skip
+        // the global push (any failure was already audited).
+        const tenantRoute = await routeQualifiedLead(
+          effectiveTenantId,
+          cdmLead,
+          sessionId,
+        );
+
+        if (!tenantRoute.pushed) {
+        // ===== EXISTING GLOBAL CRM PUSH — logic byte-for-byte unchanged =====
         try {
           const crm = getCRMConnector();
           console.log(
@@ -959,6 +1147,19 @@ export class ChatService {
             "❌ CRM/DB Update Failed (Non-fatal, continuing chat):",
             crmError,
           );
+        }
+        // ===== END EXISTING GLOBAL CRM PUSH =====
+        } else {
+          // Tenant CRM owns this lead → reflect it in the response metadata.
+          pushedToCRM = true;
+        }
+
+        // T6 / R18 — meter the qualified lead (NO-OP when billing is off;
+        // recordUsage never throws, the wrap is defence-in-depth).
+        try {
+          await recordUsage(effectiveTenantId, "lead");
+        } catch {
+          /* metering must never break the chat */
         }
       } else {
         // Diagnostic logging: explain WHY CRM push was skipped (gating decision)
@@ -1043,6 +1244,15 @@ export class ChatService {
           { type: "view_properties", label: "🏠 Voir nos annonces" },
           { type: "contact_agent", label: "💬 Contacter un agent" },
         ];
+      }
+
+      // T6 / R18 — meter the processed message on the normal reply path
+      // (NO-OP when billing is off; recordUsage never throws, wrap is
+      // defence-in-depth).
+      try {
+        await recordUsage(effectiveTenantId, "message");
+      } catch {
+        /* metering must never break the chat */
       }
 
       return {

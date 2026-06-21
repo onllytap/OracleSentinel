@@ -25,6 +25,19 @@ import {
   deletePasskey,
   PASSKEY_CHALLENGE_COOKIE,
 } from "../services/passkey.service";
+import {
+  getTotpStatus,
+  beginEnrollment,
+  activateEnrollment,
+  verifyTotp,
+  consumeRecoveryCode,
+  isTotpActivated,
+  disableTotp,
+  isBreakGlass,
+  recordFailedAttempt,
+  isLockedOut,
+} from "../services/totp.service";
+import { appendAudit } from "../services/audit.service";
 
 function getEnv(name: string, fallback?: string): string {
   const v = process.env[name];
@@ -163,6 +176,29 @@ async function signAdminSessionToken(): Promise<string> {
     .sign(secret);
 }
 
+// Issue the admin session cookies (admin_session + csrf_token) with the EXACT
+// attributes and ordering the API-key login has always used. Extracted verbatim
+// from the original POST /session body so the break-glass and TOTP paths reuse a
+// single implementation; the byte-for-byte Set-Cookie output is unchanged for
+// the existing key-login path.
+async function issueAdminSession(res: any): Promise<void> {
+  const token = await signAdminSessionToken();
+  const csrfToken = generateCSRFToken();
+
+  setCookie(res, "admin_session", token, {
+    maxAgeSeconds: 30 * 60,
+    ...cookieBaseAttrs(),
+  });
+
+  const csrfParts: string[] = [];
+  csrfParts.push(`csrf_token=${csrfToken}`);
+  csrfParts.push("Path=/");
+  csrfParts.push(`SameSite=${cookieBaseAttrs().sameSite}`);
+  if (cookieBaseAttrs().secure) csrfParts.push("Secure");
+  csrfParts.push(`Max-Age=${30 * 60}`);
+  res.append("Set-Cookie", csrfParts.join("; "));
+}
+
 // ============================================================================
 // Admin Page Handler — loads admin.html from views (like factory-ui)
 // ============================================================================
@@ -259,26 +295,56 @@ router.post("/session", express.json({ limit: "10kb" }), async (req, res) => {
   }
 
   const provided = typeof req.body?.key === "string" ? req.body.key : "";
+
+  // ── Break-glass (independent door, SEPARATE env) ──────────────────────────
+  // ADMIN_BREAK_GLASS is a DISTINCT secret from ADMIN_API_KEY. When it is set
+  // AND supplied in the `key` field, it issues a session WITHOUT TOTP (audited).
+  // When the env is unset/empty, isBreakGlass() is always false → ZERO change to
+  // the existing flow. This guarantees a way in even if the authenticator is
+  // lost while TOTP is activated.
+  if (isBreakGlass(provided)) {
+    await issueAdminSession(res);
+    await appendAudit({ actor: "admin", action: "auth.break_glass" });
+    return res.json({ success: true });
+  }
+
   if (!provided || !safeEqual(provided, required)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const token = await signAdminSessionToken();
-  const csrfToken = generateCSRFToken();
+  // ── Conditional TOTP second factor ────────────────────────────────────────
+  // The key has been validated. ONLY when TOTP is *activated* does the key path
+  // additionally require a valid TOTP code OR a single-use recovery code. When
+  // TOTP is NOT activated, the block below is skipped entirely and the session
+  // is issued EXACTLY as before — this is how the owner and the test harness log
+  // in, and that behaviour is intentionally unchanged.
+  if (await isTotpActivated()) {
+    if (await isLockedOut()) {
+      return res.status(429).json({ success: false, error: "locked_out" });
+    }
 
-  setCookie(res, "admin_session", token, {
-    maxAgeSeconds: 30 * 60,
-    ...cookieBaseAttrs(),
-  });
+    const totp = typeof req.body?.totp === "string" ? req.body.totp : "";
+    const recoveryCode =
+      typeof req.body?.recoveryCode === "string" ? req.body.recoveryCode : "";
 
-  const csrfParts: string[] = [];
-  csrfParts.push(`csrf_token=${csrfToken}`);
-  csrfParts.push("Path=/");
-  csrfParts.push(`SameSite=${cookieBaseAttrs().sameSite}`);
-  if (cookieBaseAttrs().secure) csrfParts.push("Secure");
-  csrfParts.push(`Max-Age=${30 * 60}`);
-  res.append("Set-Cookie", csrfParts.join("; "));
+    const okTotp = totp ? await verifyTotp(totp) : false;
+    const okRecovery =
+      !okTotp && recoveryCode ? await consumeRecoveryCode(recoveryCode) : false;
 
+    if (!okTotp && !okRecovery) {
+      await recordFailedAttempt();
+      await appendAudit({ actor: "admin", action: "auth.totp.fail" });
+      return res.status(401).json({ success: false, error: "totp_required" });
+    }
+
+    await appendAudit({
+      actor: "admin",
+      action: "auth.login",
+      meta: { factor: okRecovery ? "recovery_code" : "totp" },
+    });
+  }
+
+  await issueAdminSession(res);
   return res.json({ success: true });
 });
 
@@ -478,6 +544,125 @@ router.post(
         httpOnly: true,
       }),
     ]);
+    return res.json({ success: true });
+  },
+);
+
+// ── TOTP (2-step) endpoints ─────────────────────────────────────────────────
+// EVERY endpoint requires an existing admin session (requireAdminSession) so the
+// admin can enroll, activate or disable TOTP WHILE already logged in — they can
+// never be locked out mid-enrollment. Mutations also require CSRF + a small JSON
+// body limit. Secrets are emitted ONCE: the TOTP secret at /begin, the recovery
+// codes at /activate; neither is ever returned again.
+
+router.get("/totp/status", requireAdminSession(), async (_req, res) => {
+  try {
+    const status = await getTotpStatus();
+    return res.json({ success: true, ...status });
+  } catch {
+    return res
+      .status(500)
+      .json({ success: false, error: "Statut TOTP indisponible." });
+  }
+});
+
+router.post(
+  "/totp/begin",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "10kb" }),
+  async (_req, res) => {
+    try {
+      const { secret, otpauthUri } = await beginEnrollment();
+      await appendAudit({ actor: "admin", action: "auth.totp_enroll_begin" });
+      // secret + otpauthUri are returned ONCE here and never again.
+      return res.json({ success: true, secret, otpauthUri });
+    } catch (err: any) {
+      if (err?.message === "encryption_not_configured") {
+        return res
+          .status(400)
+          .json({ success: false, error: "encryption_not_configured" });
+      }
+      console.error("[Admin TOTP] begin failed:", err?.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Impossible de démarrer l'enrôlement TOTP." });
+    }
+  },
+);
+
+router.post(
+  "/totp/activate",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "10kb" }),
+  async (req, res) => {
+    const code = typeof req.body?.code === "string" ? req.body.code : "";
+    const result = await activateEnrollment(code);
+    if (!result.ok) {
+      return res
+        .status(400)
+        .json({ success: false, error: result.error || "totp_activate_failed" });
+    }
+    await appendAudit({ actor: "admin", action: "auth.totp_activate" });
+    // recovery codes are returned ONCE here and never again.
+    return res.json({ success: true, recoveryCodes: result.recoveryCodes ?? [] });
+  },
+);
+
+router.post(
+  "/totp/verify",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "10kb" }),
+  async (req, res) => {
+    const code = typeof req.body?.code === "string" ? req.body.code : "";
+    const ok = await verifyTotp(code);
+    return res.json({ success: true, ok });
+  },
+);
+
+router.post(
+  "/totp/disable",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "10kb" }),
+  async (req, res) => {
+    const code = typeof req.body?.code === "string" ? req.body.code : "";
+    const recoveryCode =
+      typeof req.body?.recoveryCode === "string" ? req.body.recoveryCode : "";
+
+    // If TOTP is currently activated, disabling requires proof of a valid
+    // factor (TOTP code or recovery code) — or break-glass. If it is NOT
+    // activated, the request is already gated by the admin session, so clearing
+    // is a safe, idempotent no-op (it also cancels a pending enrollment).
+    if (await isTotpActivated()) {
+      const breakGlass = isBreakGlass(code) || isBreakGlass(recoveryCode);
+      if (!breakGlass) {
+        if (await isLockedOut()) {
+          return res.status(429).json({ success: false, error: "locked_out" });
+        }
+        const ok =
+          (code ? await verifyTotp(code) : false) ||
+          (recoveryCode ? await consumeRecoveryCode(recoveryCode) : false);
+        if (!ok) {
+          await recordFailedAttempt();
+          return res
+            .status(401)
+            .json({ success: false, error: "totp_required" });
+        }
+      }
+    }
+
+    try {
+      await disableTotp();
+    } catch (err: any) {
+      console.error("[Admin TOTP] disable failed:", err?.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Impossible de désactiver le TOTP." });
+    }
+    await appendAudit({ actor: "admin", action: "auth.totp_reset" });
     return res.json({ success: true });
   },
 );
