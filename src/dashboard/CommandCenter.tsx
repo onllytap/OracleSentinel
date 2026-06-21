@@ -76,6 +76,7 @@ import { GradientButton, UtilityButton } from "./components/fancy-buttons";
 import { BadgeGroup } from "./components/badge-group";
 import { WorldGrid } from "./components/world-grid";
 import { Icon8, Icons8Attribution } from "./components/icon8";
+import { Icon3D, type Icon3DName } from "./components/icon3d";
 import {
   apiFetch,
   checkSession,
@@ -370,13 +371,13 @@ function PasskeyManager() {
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
-const NAV: { id: View; label: string; icon: React.ComponentType<any> }[] = [
-  { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
-  { id: "chatbots", label: "Chatbots", icon: Bot },
-  { id: "surveillance", label: "Surveillance", icon: Cctv },
-  { id: "workers", label: "Workers", icon: Cloud },
-  { id: "conversations", label: "Conversations", icon: MessageSquare },
-  { id: "infra", label: "Infrastructure", icon: Server },
+const NAV: { id: View; label: string; icon: Icon3DName }[] = [
+  { id: "overview", label: "Vue d'ensemble", icon: "overview" },
+  { id: "chatbots", label: "Chatbots", icon: "chatbots" },
+  { id: "surveillance", label: "Surveillance", icon: "surveillance" },
+  { id: "workers", label: "Workers", icon: "workers" },
+  { id: "conversations", label: "Conversations", icon: "conversations" },
+  { id: "infra", label: "Infrastructure", icon: "infra" },
 ];
 
 function Sidebar({
@@ -422,7 +423,6 @@ function Sidebar({
       </div>
       <nav className="flex flex-col gap-1">
         {NAV.map((item) => {
-          const Icon = item.icon;
           const active = view === item.id;
           return (
             <Button
@@ -434,7 +434,7 @@ function Sidebar({
                 onClose?.();
               }}
             >
-              <Icon className="size-4" />
+              <Icon3D name={item.icon} size={22} />
               {item.label}
             </Button>
           );
