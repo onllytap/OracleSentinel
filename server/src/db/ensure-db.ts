@@ -246,6 +246,123 @@ CREATE TABLE IF NOT EXISTS client_tenants (
 );
 
 CREATE INDEX IF NOT EXISTS idx_client_tenants_tenant ON client_tenants (tenant_id);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- v2.1 — Command Center plateforme multi-agences (R17/R18/R19 + R3/R4 + R11–R14)
+-- Tables ADDITIVES, idempotentes, créées AU BOOT (jamais en lazy). Aucun secret
+-- en clair : les credentials CRM et le secret TOTP sont chiffrés (utils/crypto).
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- Registre des agences provisionnées (R19). Les tenants "historiques" (sans
+-- ligne ici) restent servis normalement — la garde de service est fail-open.
+CREATE TABLE IF NOT EXISTS tenants (
+    tenant_id  VARCHAR(100) PRIMARY KEY,
+    name       VARCHAR(160) NOT NULL,
+    widget_id  VARCHAR(128) UNIQUE NOT NULL,
+    status     VARCHAR(20)  NOT NULL DEFAULT 'active'
+               CHECK (status IN ('active','suspended','archived')),
+    plan       VARCHAR(20)  NOT NULL DEFAULT 'starter',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants (status);
+
+-- Config CRM par agence (R17). config_encrypted = encryptJson(secrets) — JAMAIS
+-- en clair, JAMAIS renvoyé par une API. field_mappings = canonique -> provider.
+CREATE TABLE IF NOT EXISTS tenant_crm_configs (
+    tenant_id        VARCHAR(100) PRIMARY KEY,
+    provider         VARCHAR(20) NOT NULL DEFAULT 'none'
+                     CHECK (provider IN ('none','twenty','airtable','webhook')),
+    enabled          BOOLEAN NOT NULL DEFAULT FALSE,
+    config_encrypted TEXT,
+    field_mappings   JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at       TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_by       VARCHAR(120)
+);
+
+-- Abonnements Stripe par agence (R18). Aucune clé secrète stockée ici.
+CREATE TABLE IF NOT EXISTS tenant_subscriptions (
+    tenant_id              VARCHAR(100) PRIMARY KEY,
+    stripe_customer_id     VARCHAR(255),
+    stripe_subscription_id VARCHAR(255),
+    plan                   VARCHAR(20) NOT NULL DEFAULT 'starter',
+    status                 VARCHAR(30) NOT NULL DEFAULT 'none',
+    current_period_end     TIMESTAMP WITH TIME ZONE,
+    updated_at             TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Métering d'usage (R18). Append-only ; alimenté seulement si BILLING_ENABLED.
+CREATE TABLE IF NOT EXISTS usage_events (
+    id         BIGSERIAL PRIMARY KEY,
+    tenant_id  VARCHAR(100) NOT NULL,
+    kind       VARCHAR(20)  NOT NULL,   -- message | lead | conversation
+    qty        INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_created ON usage_events (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_kind_created ON usage_events (tenant_id, kind, created_at DESC);
+
+-- Journal d'audit append-only (R5). meta est filtrée PII/secret côté service.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id          BIGSERIAL PRIMARY KEY,
+    actor       VARCHAR(160),
+    action      VARCHAR(80) NOT NULL,
+    target_type VARCHAR(60),
+    target_id   VARCHAR(160),
+    meta        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action_created ON audit_log (action, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_target ON audit_log (target_type, target_id);
+
+-- ── Tables auto-gérées, créées AU BOOT (jamais en lazy pendant une requête) ──
+
+-- Secret TOTP du super-admin (R11–R14). secret_encrypted = encryptSecret(...).
+-- Ligne unique (id=1). Le secret n'est JAMAIS renvoyé après activation.
+CREATE TABLE IF NOT EXISTS admin_totp (
+    id               SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    secret_encrypted TEXT NOT NULL,
+    activated        BOOLEAN NOT NULL DEFAULT FALSE,
+    failed_attempts  INTEGER NOT NULL DEFAULT 0,
+    locked_until     TIMESTAMP WITH TIME ZONE,
+    created_at       TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    activated_at     TIMESTAMP WITH TIME ZONE
+);
+
+-- Codes de récupération TOTP à usage unique (R14). Stockés HACHÉS (sha256).
+CREATE TABLE IF NOT EXISTS admin_recovery_codes (
+    id         BIGSERIAL PRIMARY KEY,
+    code_hash  TEXT NOT NULL,
+    used       BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    used_at    TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_admin_recovery_codes_used ON admin_recovery_codes (used);
+
+-- État de redéploiement par agence (R3/R4). single-flight + rollback côté service.
+CREATE TABLE IF NOT EXISTS tenant_redeploys (
+    tenant_id      VARCHAR(100) PRIMARY KEY,
+    status         VARCHAR(20) NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending','in_progress','succeeded','failed','rolled_back')),
+    config_version BIGINT,
+    active_version BIGINT,
+    started_at     TIMESTAMP WITH TIME ZONE,
+    finished_at    TIMESTAMP WITH TIME ZONE,
+    error          TEXT,
+    updated_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Dédup des pushs CRM (déjà créée en lazy par AirtableConnector). On la matérialise
+-- AU BOOT (idempotent, schéma identique) pour éviter toute race en première requête.
+CREATE TABLE IF NOT EXISTS crm_pushed_leads (
+    phone      VARCHAR(50) PRIMARY KEY,
+    provider   VARCHAR(20) NOT NULL DEFAULT 'airtable',
+    session_id VARCHAR(255),
+    record_id  VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_crm_pushed_leads_created ON crm_pushed_leads (created_at);
 `;
 
 export async function ensureDbSchema(): Promise<void> {

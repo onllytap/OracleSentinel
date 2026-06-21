@@ -24,6 +24,14 @@ import crmWebhookRoutes from "./routes/crm-webhook.routes";
 import factoryRoutes from "./routes/factory.routes";
 import factoryPageHandler from "./routes/factory-ui.routes";
 import commandCenterRoutes, { privPageHandler } from "./routes/command-center.routes";
+// v2.1 — Command Center plateforme multi-agences (montés sous /api/priv, gated).
+// Stubs en T0 (501), remplis par leurs vagues respectives.
+import tenantRoutes from "./routes/tenant.routes";
+import tenantCrmRoutes from "./routes/tenant-crm.routes";
+import billingRoutes from "./routes/billing.routes";
+import rgpdRoutes from "./routes/rgpd.routes";
+import metricsRoutes from "./routes/metrics.routes";
+import redeployRoutes from "./routes/redeploy.routes";
 import { initDb } from "./db";
 import { assertDatabaseConnection } from "./db/pool";
 import { ensureDbSchema } from "./db/ensure-db";
@@ -142,6 +150,28 @@ try {
   logger.warn({ err }, "Better Auth could not be mounted; continuing without it");
 }
 
+// ── Stripe webhook (facturation R18) — PUBLIC, corps BRUT, AVANT express.json ──
+// La signature (Stripe-Signature: t=…,v1=…) est vérifiée par billing.service
+// (HMAC-SHA256 de `${t}.${rawBody}` avec STRIPE_WEBHOOK_SECRET). Import gardé :
+// tant que billing.service (T2) n'existe pas, on répond 503 sans casser le boot.
+// BILLING_ENABLED=false → la facturation est inerte ; ce endpoint reste inoffensif.
+app.post(
+  "/api/billing/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const billing = require("./services/billing.service");
+      if (billing && typeof billing.stripeWebhookHandler === "function") {
+        return billing.stripeWebhookHandler(req, res);
+      }
+    } catch {
+      /* billing.service pas encore livré (T2) — dégrade proprement */
+    }
+    return res.status(503).json({ error: "billing_not_configured" });
+  },
+);
+
 app.use(express.json({ limit: "1mb" }));
 
 app.use(
@@ -196,6 +226,14 @@ app.use("/api/factory", factoryRoutes);
 // by requireAdminSession() inside command-center.routes.
 app.get("/priv", adminIpAllowlist(), privPageHandler);
 app.use("/api/priv", adminIpAllowlist(), commandCenterRoutes);
+// v2.1 — routers additifs montés sur /api/priv (gated par requireAdminSession par
+// route à l'intérieur ; chemins distincts → ne masquent pas command-center.routes).
+app.use("/api/priv", adminIpAllowlist(), tenantRoutes);
+app.use("/api/priv", adminIpAllowlist(), tenantCrmRoutes);
+app.use("/api/priv", adminIpAllowlist(), billingRoutes);
+app.use("/api/priv", adminIpAllowlist(), rgpdRoutes);
+app.use("/api/priv", adminIpAllowlist(), metricsRoutes);
+app.use("/api/priv", adminIpAllowlist(), redeployRoutes);
 
 // ── /qg — Command Center (React) served in production ───────────────────────
 // The full enterprise dashboard (src/dashboard/CommandCenter.tsx) is built by
