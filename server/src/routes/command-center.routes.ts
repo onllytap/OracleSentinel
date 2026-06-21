@@ -30,6 +30,16 @@ import {
   rollbackTenantConfig,
   buildIdentityPromptBlock,
 } from "../services/tenant-config.service";
+import {
+  listClients,
+  getClient,
+  createClient,
+  updateClient,
+  deleteClient,
+  assignTenant,
+  unassignTenant,
+  getTenantOwners,
+} from "../services/client.service";
 
 // ── Page handler (mirrors factory-ui.routes / admin.routes) ──────────────────
 
@@ -299,5 +309,189 @@ router.post(
     }
   },
 );
+
+// ── Clients / CRM (customer registry + chatbot ownership) ────────────────────
+// Lets the super-admin manage end customers ("clients"), know which chatbot
+// (tenant) belongs to which client, and store French legal info (SIREN, VAT,
+// DPA...). Reads gated by session; writes also require CSRF. No secrets stored.
+
+/** Parse a strictly positive integer path param (e.g. :id). null if invalid. */
+function parseClientId(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n <= 0) return null;
+  return n;
+}
+
+router.get("/clients", requireAdminSession(), async (_req, res) => {
+  try {
+    const clients = await listClients();
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, clients });
+  } catch (err: any) {
+    console.error("[Command Center] list clients failed:", err?.message);
+    return res.status(500).json({ success: false, error: "List clients failed" });
+  }
+});
+
+router.post(
+  "/clients",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "64kb" }),
+  async (req, res) => {
+    const name =
+      typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Client name is required" });
+    }
+    try {
+      const client = await createClient(req.body ?? {});
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, client });
+    } catch (err: any) {
+      console.error("[Command Center] create client failed:", err?.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Create client failed" });
+    }
+  },
+);
+
+router.get("/clients/:id", requireAdminSession(), async (req, res) => {
+  const id = parseClientId(String(req.params.id || ""));
+  if (id === null) {
+    return res.status(400).json({ success: false, error: "Invalid client id" });
+  }
+  try {
+    const client = await getClient(id);
+    if (!client) {
+      return res.status(404).json({ success: false, error: "Client not found" });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, client });
+  } catch (err: any) {
+    console.error("[Command Center] get client failed:", err?.message);
+    return res.status(500).json({ success: false, error: "Get client failed" });
+  }
+});
+
+router.put(
+  "/clients/:id",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "64kb" }),
+  async (req, res) => {
+    const id = parseClientId(String(req.params.id || ""));
+    if (id === null) {
+      return res.status(400).json({ success: false, error: "Invalid client id" });
+    }
+    try {
+      const client = await updateClient(id, req.body ?? {});
+      if (!client) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Client not found" });
+      }
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, client });
+    } catch (err: any) {
+      console.error("[Command Center] update client failed:", err?.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Update client failed" });
+    }
+  },
+);
+
+router.delete(
+  "/clients/:id",
+  requireAdminSession(),
+  requireCSRF(),
+  async (req, res) => {
+    const id = parseClientId(String(req.params.id || ""));
+    if (id === null) {
+      return res.status(400).json({ success: false, error: "Invalid client id" });
+    }
+    try {
+      const deleted = await deleteClient(id);
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, deleted });
+    } catch (err: any) {
+      console.error("[Command Center] delete client failed:", err?.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Delete client failed" });
+    }
+  },
+);
+
+router.post(
+  "/clients/:id/tenants",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "8kb" }),
+  async (req, res) => {
+    const id = parseClientId(String(req.params.id || ""));
+    if (id === null) {
+      return res.status(400).json({ success: false, error: "Invalid client id" });
+    }
+    const tenantId = String(req.body?.tenantId || "").trim();
+    if (!isValidTenantId(tenantId)) {
+      return res.status(400).json({ success: false, error: "Invalid tenant id" });
+    }
+    try {
+      await assignTenant(id, tenantId);
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Command Center] assign tenant failed:", err?.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Assign tenant failed" });
+    }
+  },
+);
+
+router.delete(
+  "/clients/:id/tenants/:tenantId",
+  requireAdminSession(),
+  requireCSRF(),
+  async (req, res) => {
+    const id = parseClientId(String(req.params.id || ""));
+    if (id === null) {
+      return res.status(400).json({ success: false, error: "Invalid client id" });
+    }
+    const tenantId = String(req.params.tenantId || "").trim();
+    if (!isValidTenantId(tenantId)) {
+      return res.status(400).json({ success: false, error: "Invalid tenant id" });
+    }
+    try {
+      const removed = await unassignTenant(id, tenantId);
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ success: true, removed });
+    } catch (err: any) {
+      console.error("[Command Center] unassign tenant failed:", err?.message);
+      return res
+        .status(500)
+        .json({ success: false, error: "Unassign tenant failed" });
+    }
+  },
+);
+
+router.get("/tenant-owners", requireAdminSession(), async (_req, res) => {
+  try {
+    const owners = await getTenantOwners();
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ success: true, owners });
+  } catch (err: any) {
+    console.error("[Command Center] tenant owners failed:", err?.message);
+    return res
+      .status(500)
+      .json({ success: false, error: "Tenant owners failed" });
+  }
+});
 
 export default router;

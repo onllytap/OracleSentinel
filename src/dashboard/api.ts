@@ -174,3 +174,114 @@ export async function passkeyDelete(credentialId: string): Promise<void> {
   });
   if (!res.ok) throw new Error(await readError(res, `Suppression impossible (HTTP ${res.status}).`));
 }
+
+// ============================================================================
+// Clients (CRM) — owner records that group one or more chatbots (tenants).
+// Reads go through getJSON; writes through apiFetch (CSRF auto-sent) and throw a
+// helpful message on !res.ok. Mirrors the passkey* helpers above.
+// ============================================================================
+
+export interface ClientInfo {
+  id: number;
+  name: string;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  legalName: string | null;
+  siren: string | null;
+  vatNumber: string | null;
+  address: string | null;
+  contractRef: string | null;
+  dpaSigned: boolean;
+  documentsUrl: string | null;
+  notes: string | null;
+  status: "active" | "prospect" | "archived";
+  createdAt: string | null;
+  updatedAt: string | null;
+  tenantIds: string[];
+  botCount: number;
+}
+
+/** Writable client fields (camelCase). `name` is required when creating. */
+export interface ClientInput {
+  name?: string;
+  company?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  legalName?: string | null;
+  siren?: string | null;
+  vatNumber?: string | null;
+  address?: string | null;
+  contractRef?: string | null;
+  dpaSigned?: boolean;
+  documentsUrl?: string | null;
+  notes?: string | null;
+  status?: ClientInfo["status"];
+}
+
+export interface TenantOwner {
+  clientId: number;
+  clientName: string;
+}
+
+export async function listClients(): Promise<ClientInfo[]> {
+  const j = await getJSON<{ success: boolean; clients: ClientInfo[] }>("/api/priv/clients");
+  return Array.isArray(j?.clients) ? j.clients : [];
+}
+
+export async function getClient(id: number): Promise<ClientInfo> {
+  const j = await getJSON<{ success: boolean; client: ClientInfo }>(
+    `/api/priv/clients/${encodeURIComponent(id)}`,
+  );
+  return j.client;
+}
+
+export async function createClient(input: ClientInput): Promise<ClientInfo> {
+  const res = await apiFetch("/api/priv/clients", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Création du client impossible (HTTP ${res.status}).`));
+  const j = await res.json();
+  return j.client;
+}
+
+export async function updateClient(id: number, input: ClientInput): Promise<ClientInfo> {
+  const res = await apiFetch(`/api/priv/clients/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Mise à jour du client impossible (HTTP ${res.status}).`));
+  const j = await res.json();
+  return j.client;
+}
+
+export async function deleteClient(id: number): Promise<void> {
+  const res = await apiFetch(`/api/priv/clients/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(await readError(res, `Suppression du client impossible (HTTP ${res.status}).`));
+}
+
+export async function assignTenantToClient(clientId: number, tenantId: string): Promise<void> {
+  const res = await apiFetch(`/api/priv/clients/${encodeURIComponent(clientId)}/tenants`, {
+    method: "POST",
+    body: JSON.stringify({ tenantId }),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Assignation impossible (HTTP ${res.status}).`));
+}
+
+export async function unassignTenantFromClient(clientId: number, tenantId: string): Promise<void> {
+  const res = await apiFetch(
+    `/api/priv/clients/${encodeURIComponent(clientId)}/tenants/${encodeURIComponent(tenantId)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error(await readError(res, `Retrait impossible (HTTP ${res.status}).`));
+}
+
+export async function getTenantOwners(): Promise<Record<string, TenantOwner>> {
+  const j = await getJSON<{ success: boolean; owners: Record<string, TenantOwner> }>(
+    "/api/priv/tenant-owners",
+  );
+  return j?.owners || {};
+}

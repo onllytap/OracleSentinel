@@ -139,6 +139,40 @@ function probeHttp(rawUrl: string, path = "/"): Promise<{ ok: boolean; ms: numbe
   });
 }
 
+// ── Host resolution helpers (Docker-awareness) ───────────────────────────────
+//
+// En production Dockerisée, le backend tourne dans son propre conteneur : donc
+// "localhost"/"127.0.0.1" désigne le *loopback du conteneur* — ni la machine
+// hôte, ni un conteneur voisin. Sonder le loopback dans ce cas est trompeur :
+// un service réellement actif (conteneur voisin) apparaîtrait quand même "down".
+// Ces helpers permettent à chaque sonde de viser un hôte configurable et, quand
+// elle ne voit que le loopback, de le dire explicitement plutôt que d'afficher
+// un "down" nu et mensonger.
+
+/** Retourne la première valeur d'env définie et non vide parmi `envVars`, sinon `fallback`. */
+function resolveHost(envVars: string[], fallback: string): string {
+  for (const name of envVars) {
+    const v = process.env[name];
+    if (v && v.trim()) return v.trim();
+  }
+  return fallback;
+}
+
+/** Vrai quand un hôte pointe sur le loopback du conteneur (localhost/127.0.0.1/::1). */
+function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" || h === "::1";
+}
+
+/**
+ * Suffixe de `detail` affiché quand une sonde ne peut atteindre que le loopback
+ * du conteneur. À préfixer par le résultat de la sonde,
+ * ex. `Sonde sur le ${loopbackHint("REDIS_HOST")}`.
+ */
+function loopbackHint(hostVar: string): string {
+  return `loopback du conteneur — configurez ${hostVar} pour viser le vrai service.`;
+}
+
 // ── Per-service probes ───────────────────────────────────────────────────────
 
 async function probeNeon(): Promise<ServiceReport> {
@@ -176,64 +210,103 @@ async function probeNeon(): Promise<ServiceReport> {
 }
 
 async function probeLocalPostgres(): Promise<ServiceReport> {
+  const host = resolveHost(["POSTGRES_HOST"], "localhost");
+  const loopback = isLoopbackHost(host);
   const port = Number(process.env.POSTGRES_PORT ?? 5432);
   const user = mask(process.env.POSTGRES_USER);
   const db = process.env.POSTGRES_DB || "—";
-  const tcp = await probeTcp("localhost", port);
+  const tcp = await probeTcp(host, port);
+  let detail: string;
+  if (tcp.ok) {
+    detail = loopback ? `Port ouvert sur le ${loopbackHint("POSTGRES_HOST")}` : "Port ouvert.";
+  } else {
+    detail = loopback ? `Sonde sur le ${loopbackHint("POSTGRES_HOST")}` : "Service arrêté ou injoignable.";
+  }
   return {
     id: "postgres-local",
     name: "PostgreSQL (local)",
     category: "database",
     status: tcp.ok ? "operational" : "down",
     latencyMs: tcp.ok ? tcp.ms : null,
-    endpoint: `${user}@localhost:${port}/${db}`,
+    endpoint: `${user}@${host}:${port}/${db}`,
     purpose: "Base PostgreSQL locale de développement (dev/test).",
     capabilities: ["Données dev locales", "Tests d'intégration"],
-    detail: tcp.ok ? "Port ouvert." : "Service local arrêté ou non démarré.",
+    detail,
   };
 }
 
 async function probeRedis(): Promise<ServiceReport> {
   const meta = describeUrl(process.env.REDIS_URL);
-  const host = meta?.host || "localhost";
+  const host = meta?.host || resolveHost(["REDIS_HOST"], "localhost");
   const port = meta?.port || Number(process.env.REDIS_PORT ?? 6379);
+  const configured = Boolean(process.env.REDIS_URL || process.env.REDIS_HOST);
+  const loopback = isLoopbackHost(host);
   const tcp = await probeTcp(host, port);
+  let detail: string;
+  if (tcp.ok) {
+    detail = loopback ? `Port ouvert sur le ${loopbackHint("REDIS_HOST/REDIS_URL")}` : "Port ouvert.";
+  } else if (!configured) {
+    detail = "Redis non configuré — définissez REDIS_HOST ou REDIS_URL.";
+  } else {
+    detail = loopback ? `Sonde sur le ${loopbackHint("REDIS_HOST/REDIS_URL")}` : "Redis injoignable.";
+  }
   return {
     id: "redis",
     name: "Redis",
     category: "cache",
-    status: tcp.ok ? "operational" : (process.env.REDIS_URL ? "down" : "not_configured"),
+    status: tcp.ok ? "operational" : (configured ? "down" : "not_configured"),
     latencyMs: tcp.ok ? tcp.ms : null,
     endpoint: `${host}:${port}`,
     purpose: "Cache & files d'attente — rate-limiting, sessions volatiles, jobs.",
     capabilities: ["Cache réponses LLM", "Rate limiting", "File de jobs", "Pub/Sub temps réel"],
-    detail: tcp.ok ? "Port ouvert." : "Redis injoignable.",
+    detail,
   };
 }
 
 async function probeMinio(): Promise<ServiceReport> {
-  const host = process.env.MINIO_ENDPOINT || "localhost";
+  const host = resolveHost(["MINIO_ENDPOINT"], "localhost");
+  const configured = Boolean(process.env.MINIO_ENDPOINT);
+  const loopback = isLoopbackHost(host);
   const port = Number(process.env.MINIO_API_PORT ?? process.env.MINIO_PORT ?? 9000);
   const useSsl = String(process.env.MINIO_USE_SSL).toLowerCase() === "true";
   const http = await probeHttp(`${useSsl ? "https" : "http"}://${host}:${port}`, "/minio/health/live");
+  let detail: string;
+  if (http.ok) {
+    detail = loopback
+      ? `Health endpoint répond (HTTP ${http.code ?? "?"}) sur le ${loopbackHint("MINIO_ENDPOINT")}`
+      : `Health endpoint répond (HTTP ${http.code ?? "?"}).`;
+  } else if (!configured) {
+    detail = "MinIO non configuré — définissez MINIO_ENDPOINT.";
+  } else {
+    detail = loopback ? `Sonde sur le ${loopbackHint("MINIO_ENDPOINT")}` : "MinIO injoignable.";
+  }
   return {
     id: "minio",
     name: "MinIO (S3)",
     category: "storage",
-    status: http.ok ? "operational" : (process.env.MINIO_ENDPOINT ? "down" : "not_configured"),
+    status: http.ok ? "operational" : (configured ? "down" : "not_configured"),
     latencyMs: http.ok ? http.ms : null,
     endpoint: `${host}:${port} · bucket=${process.env.MINIO_BUCKET || "—"}`,
     purpose: "Stockage objet S3 — documents, médias, exports, backups.",
     capabilities: ["Upload documents", "Stockage médias", "Backups", "Exports CSV/PDF"],
-    detail: http.ok ? `Health endpoint répond (HTTP ${http.code ?? "?"}).` : "MinIO injoignable.",
+    detail,
   };
 }
 
 async function probeN8n(): Promise<ServiceReport> {
-  const host = process.env.N8N_HOST || "localhost";
+  const host = resolveHost(["N8N_HOST"], "localhost");
+  const loopback = isLoopbackHost(host);
   const port = Number(process.env.N8N_PORT ?? 5678);
   const proto = process.env.N8N_PROTOCOL || "http";
   const res = await probeHttp(`${proto}://${host}:${port}`, "/healthz");
+  let detail: string;
+  if (res.ok) {
+    detail = loopback
+      ? `Joignable (HTTP ${res.code ?? "?"}) sur le ${loopbackHint("N8N_HOST")}`
+      : `Joignable (HTTP ${res.code ?? "?"}).`;
+  } else {
+    detail = loopback ? `Sonde sur le ${loopbackHint("N8N_HOST")}` : "n8n injoignable.";
+  }
   return {
     id: "n8n",
     name: "n8n Automation",
@@ -243,7 +316,7 @@ async function probeN8n(): Promise<ServiceReport> {
     endpoint: `${proto}://${host}:${port}`,
     purpose: "Orchestration des workflows — la 'canne à pêche automatique'.",
     capabilities: ["Workflows de closing", "Sync CRM", "Webhooks entrants", "Notifications"],
-    detail: res.ok ? `Reachable (HTTP ${res.code ?? "?"}).` : "n8n injoignable.",
+    detail,
   };
 }
 

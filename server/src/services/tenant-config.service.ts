@@ -6,8 +6,9 @@
 // template) + this tenant's partial override appended to the system prompt.
 //
 // SAFETY:
-//   - Overrides only ever hold a WHITELISTED, NON-SECRET subset (branding name
-//     + personality). sanitizeOverride() drops anything else, so a malicious or
+//   - Overrides only ever hold a WHITELISTED, NON-SECRET subset (branding +
+//     personality + free-form instructions + public contact details + canned
+//     messages). sanitizeOverride() drops anything else, so a malicious or
 //     malformed payload can never inject secrets or arbitrary fields.
 //   - Read path (chat hot path) is cached (TTL) and degrades to "no override"
 //     on any DB error — a tenant config hiccup can NEVER break chat.
@@ -42,6 +43,7 @@ export interface TenantOverride {
   branding?: {
     agentName?: string;
     agencyName?: string;
+    tagline?: string;
   };
   personality?: {
     writingStyle?: WritingStyle;
@@ -49,6 +51,18 @@ export interface TenantOverride {
     maxResponseWords?: number;
     language?: string;
     systemPromptModifiers?: string[];
+    customInstructions?: string;
+  };
+  contact?: {
+    phone?: string;
+    email?: string;
+    address?: string;
+    website?: string;
+    hours?: string;
+  };
+  messages?: {
+    welcome?: string;
+    fallback?: string;
   };
 }
 
@@ -64,6 +78,11 @@ const MAX_NAME = 80;
 const MAX_LANG = 24;
 const MAX_MODIFIER = 280;
 const MAX_MODIFIERS = 20;
+const MAX_TAGLINE = 120;
+const MAX_CUSTOM_INSTRUCTIONS = 2000;
+const MAX_CONTACT = 160; // phone / email / website / hours
+const MAX_ADDRESS = 240;
+const MAX_MESSAGE = 500; // welcome / fallback
 
 // ── Pure helpers (no I/O) ────────────────────────────────────────────────────
 
@@ -87,8 +106,10 @@ export function sanitizeOverride(raw: any): TenantOverride {
   const branding: TenantOverride["branding"] = {};
   const agentName = cleanStr(raw?.branding?.agentName, MAX_NAME);
   const agencyName = cleanStr(raw?.branding?.agencyName, MAX_NAME);
+  const tagline = cleanStr(raw?.branding?.tagline, MAX_TAGLINE);
   if (agentName !== undefined) branding.agentName = agentName;
   if (agencyName !== undefined) branding.agencyName = agencyName;
+  if (tagline !== undefined) branding.tagline = tagline;
   if (Object.keys(branding).length > 0) out.branding = branding;
 
   // ── personality ──
@@ -119,7 +140,36 @@ export function sanitizeOverride(raw: any): TenantOverride {
       .slice(0, MAX_MODIFIERS);
     if (clean.length > 0) personality.systemPromptModifiers = clean;
   }
+  const customInstructions = cleanStr(
+    raw?.personality?.customInstructions,
+    MAX_CUSTOM_INSTRUCTIONS,
+  );
+  if (customInstructions !== undefined) {
+    personality.customInstructions = customInstructions;
+  }
   if (Object.keys(personality).length > 0) out.personality = personality;
+
+  // ── contact (public agency coordinates — no secrets) ──
+  const contact: TenantOverride["contact"] = {};
+  const phone = cleanStr(raw?.contact?.phone, MAX_CONTACT);
+  const email = cleanStr(raw?.contact?.email, MAX_CONTACT);
+  const address = cleanStr(raw?.contact?.address, MAX_ADDRESS);
+  const website = cleanStr(raw?.contact?.website, MAX_CONTACT);
+  const hours = cleanStr(raw?.contact?.hours, MAX_CONTACT);
+  if (phone !== undefined) contact.phone = phone;
+  if (email !== undefined) contact.email = email;
+  if (address !== undefined) contact.address = address;
+  if (website !== undefined) contact.website = website;
+  if (hours !== undefined) contact.hours = hours;
+  if (Object.keys(contact).length > 0) out.contact = contact;
+
+  // ── messages (canned welcome / fallback copy) ──
+  const messages: TenantOverride["messages"] = {};
+  const welcome = cleanStr(raw?.messages?.welcome, MAX_MESSAGE);
+  const fallback = cleanStr(raw?.messages?.fallback, MAX_MESSAGE);
+  if (welcome !== undefined) messages.welcome = welcome;
+  if (fallback !== undefined) messages.fallback = fallback;
+  if (Object.keys(messages).length > 0) out.messages = messages;
 
   return out;
 }
@@ -129,15 +179,20 @@ export function isEmptyOverride(o: TenantOverride | null | undefined): boolean {
   if (!o) return true;
   const b = o.branding ?? {};
   const p = o.personality ?? {};
-  const hasB = !!(b.agentName || b.agencyName);
+  const c = o.contact ?? {};
+  const m = o.messages ?? {};
+  const hasB = !!(b.agentName || b.agencyName || b.tagline);
   const hasP = !!(
     p.writingStyle ||
     p.toneOfVoice ||
     (typeof p.maxResponseWords === "number") ||
     p.language ||
-    (p.systemPromptModifiers && p.systemPromptModifiers.length > 0)
+    (p.systemPromptModifiers && p.systemPromptModifiers.length > 0) ||
+    p.customInstructions
   );
-  return !hasB && !hasP;
+  const hasC = !!(c.phone || c.email || c.address || c.website || c.hours);
+  const hasM = !!(m.welcome || m.fallback);
+  return !hasB && !hasP && !hasC && !hasM;
 }
 
 const STYLE_LABEL: Record<WritingStyle, string> = {
@@ -167,6 +222,8 @@ export function buildIdentityPromptBlock(
   const o = override as TenantOverride;
   const b = o.branding ?? {};
   const p = o.personality ?? {};
+  const c = o.contact ?? {};
+  const m = o.messages ?? {};
   const lines: string[] = [];
 
   if (b.agentName && b.agencyName) {
@@ -176,6 +233,7 @@ export function buildIdentityPromptBlock(
   } else if (b.agencyName) {
     lines.push(`- Tu représentes ${b.agencyName}.`);
   }
+  if (b.tagline) lines.push(`- Slogan: ${b.tagline}`);
 
   if (p.writingStyle || p.toneOfVoice) {
     const parts: string[] = [];
@@ -187,17 +245,43 @@ export function buildIdentityPromptBlock(
   if (typeof p.maxResponseWords === "number") {
     lines.push(`- Maximum ${p.maxResponseWords} mots par réponse.`);
   }
-  for (const m of p.systemPromptModifiers ?? []) {
-    lines.push(`- ${m}`);
+  for (const mod of p.systemPromptModifiers ?? []) {
+    lines.push(`- ${mod}`);
+  }
+  if (m.welcome) {
+    lines.push(`- Message d'accueil suggéré: "${m.welcome}"`);
+  }
+  if (m.fallback) {
+    lines.push(`- En cas d'incompréhension, réponds dans l'esprit: "${m.fallback}"`);
   }
 
-  if (lines.length === 0) return "";
+  // Labelled sub-sections, kept separate so they stand out in the prompt.
+  const blocks: string[] = [];
+  if (lines.length > 0) blocks.push(lines.join("\n"));
+
+  if (p.customInstructions) {
+    blocks.push(
+      "📌 INSTRUCTIONS SPÉCIFIQUES (prioritaires)\n" + p.customInstructions,
+    );
+  }
+
+  if (c.phone || c.email || c.address || c.website || c.hours) {
+    const contactLines: string[] = [];
+    if (c.phone) contactLines.push(`- Téléphone: ${c.phone}`);
+    if (c.email) contactLines.push(`- Email: ${c.email}`);
+    if (c.address) contactLines.push(`- Adresse: ${c.address}`);
+    if (c.website) contactLines.push(`- Site web: ${c.website}`);
+    if (c.hours) contactLines.push(`- Horaires: ${c.hours}`);
+    blocks.push("📞 Coordonnées de l'agence\n" + contactLines.join("\n"));
+  }
+
+  if (blocks.length === 0) return "";
 
   return (
     "\n\n━━━━━━━━━━━━━━━━━━━━━━\n" +
     "🏷️ IDENTITÉ & STYLE DE CETTE AGENCE (prioritaire sur les règles génériques)\n" +
     "━━━━━━━━━━━━━━━━━━━━━━\n" +
-    lines.join("\n")
+    blocks.join("\n\n")
   );
 }
 
@@ -399,6 +483,7 @@ function mergeOverridePreferExisting(
     branding: {
       agentName: e.branding?.agentName ?? incoming.branding?.agentName,
       agencyName: e.branding?.agencyName ?? incoming.branding?.agencyName,
+      tagline: e.branding?.tagline ?? incoming.branding?.tagline,
     },
     personality: {
       writingStyle: e.personality?.writingStyle ?? incoming.personality?.writingStyle,
@@ -409,6 +494,19 @@ function mergeOverridePreferExisting(
       systemPromptModifiers: e.personality?.systemPromptModifiers?.length
         ? e.personality.systemPromptModifiers
         : incoming.personality?.systemPromptModifiers,
+      customInstructions:
+        e.personality?.customInstructions ?? incoming.personality?.customInstructions,
+    },
+    contact: {
+      phone: e.contact?.phone ?? incoming.contact?.phone,
+      email: e.contact?.email ?? incoming.contact?.email,
+      address: e.contact?.address ?? incoming.contact?.address,
+      website: e.contact?.website ?? incoming.contact?.website,
+      hours: e.contact?.hours ?? incoming.contact?.hours,
+    },
+    messages: {
+      welcome: e.messages?.welcome ?? incoming.messages?.welcome,
+      fallback: e.messages?.fallback ?? incoming.messages?.fallback,
     },
   });
 }

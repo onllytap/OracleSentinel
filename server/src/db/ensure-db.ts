@@ -214,6 +214,38 @@ CREATE TABLE IF NOT EXISTS admin_passkeys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_admin_passkeys_created ON admin_passkeys (created_at DESC);
+
+-- ── Clients / CRM (Command Center) ─────────────────────────────────────────
+-- End customers ("clients") managed by the super-admin QG, with French legal
+-- info (legal name, SIREN, VAT, DPA...). No secrets are stored here.
+CREATE TABLE IF NOT EXISTS clients (
+  id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(160) NOT NULL,
+  company VARCHAR(160),
+  email VARCHAR(200),
+  phone VARCHAR(60),
+  legal_name VARCHAR(200),
+  siren VARCHAR(20),
+  vat_number VARCHAR(30),
+  address TEXT,
+  contract_ref VARCHAR(120),
+  dpa_signed BOOLEAN NOT NULL DEFAULT FALSE,
+  documents_url TEXT,
+  notes TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Which chatbot (tenant) belongs to which client. A tenant has a single owner
+-- (enforced in the service layer); a client can own many tenants.
+CREATE TABLE IF NOT EXISTS client_tenants (
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  tenant_id VARCHAR(100) NOT NULL,
+  PRIMARY KEY (client_id, tenant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_client_tenants_tenant ON client_tenants (tenant_id);
 `;
 
 export async function ensureDbSchema(): Promise<void> {

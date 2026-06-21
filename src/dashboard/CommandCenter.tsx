@@ -16,6 +16,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  Pencil,
   Plus,
   Radio,
   RefreshCw,
@@ -90,9 +91,19 @@ import {
   passkeyList,
   passkeyDelete,
   type PasskeyInfo,
+  listClients,
+  createClient,
+  updateClient,
+  deleteClient,
+  assignTenantToClient,
+  unassignTenantFromClient,
+  getTenantOwners,
+  type ClientInfo,
+  type ClientInput,
+  type TenantOwner,
 } from "./api";
 
-type View = "overview" | "chatbots" | "surveillance" | "workers" | "conversations" | "infra";
+type View = "overview" | "chatbots" | "clients" | "surveillance" | "workers" | "conversations" | "infra";
 
 // ── Reusable: friendly error state ───────────────────────────────────────────
 
@@ -374,6 +385,7 @@ function PasskeyManager() {
 const NAV: { id: View; label: string; icon: Icon3DName }[] = [
   { id: "overview", label: "Vue d'ensemble", icon: "overview" },
   { id: "chatbots", label: "Chatbots", icon: "chatbots" },
+  { id: "clients", label: "Clients", icon: "clients" },
   { id: "surveillance", label: "Surveillance", icon: "surveillance" },
   { id: "workers", label: "Workers", icon: "workers" },
   { id: "conversations", label: "Conversations", icon: "conversations" },
@@ -849,6 +861,16 @@ function TenantConfigEditor({ tenantId }: { tenantId: string }) {
   const [maxWords, setMaxWords] = useState("");
   const [language, setLanguage] = useState("");
   const [modifiers, setModifiers] = useState("");
+  // QG-only override fields (not present in `defaults`) — pre-filled from override only.
+  const [tagline, setTagline] = useState("");
+  const [customInstructions, setCustomInstructions] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactAddress, setContactAddress] = useState("");
+  const [contactWebsite, setContactWebsite] = useState("");
+  const [contactHours, setContactHours] = useState("");
+  const [msgWelcome, setMsgWelcome] = useState("");
+  const [msgFallback, setMsgFallback] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -879,6 +901,18 @@ function TenantConfigEditor({ tenantId }: { tenantId: string }) {
             ? op.systemPromptModifiers
             : dp.systemPromptModifiers) || [];
         setModifiers(mods.join("\n"));
+        // QG-only fields live on the override only (never in `defaults`).
+        const oc = o.contact || {};
+        const om = o.messages || {};
+        setTagline(ob.tagline ?? "");
+        setCustomInstructions(op.customInstructions ?? "");
+        setContactPhone(oc.phone ?? "");
+        setContactEmail(oc.email ?? "");
+        setContactAddress(oc.address ?? "");
+        setContactWebsite(oc.website ?? "");
+        setContactHours(oc.hours ?? "");
+        setMsgWelcome(om.welcome ?? "");
+        setMsgFallback(om.fallback ?? "");
       })
       .catch((e) => alive && setErr(e?.message || "Erreur"));
     return () => {
@@ -890,10 +924,15 @@ function TenantConfigEditor({ tenantId }: { tenantId: string }) {
     setSaving(true);
     setErr("");
     setSaved(false);
+    const clean = (v: string) => {
+      const t = v.trim();
+      return t ? t : undefined;
+    };
     const override = {
       branding: {
         agentName: agentName.trim(),
         agencyName: agencyName.trim(),
+        tagline: clean(tagline),
       },
       personality: {
         writingStyle: writingStyle || undefined,
@@ -904,6 +943,18 @@ function TenantConfigEditor({ tenantId }: { tenantId: string }) {
           .split("\n")
           .map((s) => s.trim())
           .filter(Boolean),
+        customInstructions: clean(customInstructions),
+      },
+      contact: {
+        phone: clean(contactPhone),
+        email: clean(contactEmail),
+        address: clean(contactAddress),
+        website: clean(contactWebsite),
+        hours: clean(contactHours),
+      },
+      messages: {
+        welcome: clean(msgWelcome),
+        fallback: clean(msgFallback),
       },
     };
     try {
@@ -941,51 +992,142 @@ function TenantConfigEditor({ tenantId }: { tenantId: string }) {
         <Skeleton className="h-44 w-full" />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-xs text-muted-foreground">Nom de l'agent</span>
-              <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder={ph(defaults.branding?.agentName)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-muted-foreground">Nom de l'agence</span>
-              <Input value={agencyName} onChange={(e) => setAgencyName(e.target.value)} placeholder={ph(defaults.branding?.agencyName)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-muted-foreground">Style d'écriture</span>
-              <select className={TC_SELECT} value={writingStyle} onChange={(e) => setWritingStyle(e.target.value)}>
-                {WRITING_STYLE_OPTS.map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-muted-foreground">Ton</span>
-              <select className={TC_SELECT} value={toneOfVoice} onChange={(e) => setToneOfVoice(e.target.value)}>
-                {TONE_OPTS.map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-muted-foreground">Max mots / réponse</span>
-              <Input type="number" value={maxWords} onChange={(e) => setMaxWords(e.target.value)} placeholder={ph(defaults.personality?.maxResponseWords)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-muted-foreground">Langue</span>
-              <Input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder={ph(defaults.personality?.language)} />
+          {/* Identité & marque */}
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Identité et marque
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Nom de l'agent</span>
+                <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder={ph(defaults.branding?.agentName)} />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Nom de l'agence</span>
+                <Input value={agencyName} onChange={(e) => setAgencyName(e.target.value)} placeholder={ph(defaults.branding?.agencyName)} />
+              </label>
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-xs text-muted-foreground">Slogan</span>
+                <Input value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="Ex : l'immobilier qui vous ressemble" />
+              </label>
+            </div>
+          </div>
+
+          {/* Personnalité */}
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Personnalité
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Style d'écriture</span>
+                <select className={TC_SELECT} value={writingStyle} onChange={(e) => setWritingStyle(e.target.value)}>
+                  {WRITING_STYLE_OPTS.map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Ton</span>
+                <select className={TC_SELECT} value={toneOfVoice} onChange={(e) => setToneOfVoice(e.target.value)}>
+                  {TONE_OPTS.map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Max mots / réponse</span>
+                <Input type="number" value={maxWords} onChange={(e) => setMaxWords(e.target.value)} placeholder={ph(defaults.personality?.maxResponseWords)} />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Langue</span>
+                <Input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder={ph(defaults.personality?.language)} />
+              </label>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Instructions de prompt (une par ligne)</span>
+              <textarea
+                className={TC_TEXTAREA}
+                rows={3}
+                value={modifiers}
+                onChange={(e) => setModifiers(e.target.value)}
+                placeholder="Ex : Mets en avant nos biens neufs. Propose toujours une visite."
+              />
             </label>
           </div>
 
-          <label className="block space-y-1">
-            <span className="text-xs text-muted-foreground">Instructions de prompt (une par ligne)</span>
+          {/* Prompt prioritaire — le champ clé pour le propriétaire */}
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+              Prompt / instructions spécifiques (prioritaires)
+            </div>
             <textarea
               className={TC_TEXTAREA}
-              rows={3}
-              value={modifiers}
-              onChange={(e) => setModifiers(e.target.value)}
-              placeholder="Ex : Mets en avant nos biens neufs. Propose toujours une visite."
+              rows={6}
+              value={customInstructions}
+              onChange={(e) => setCustomInstructions(e.target.value)}
+              placeholder="Consignes prioritaires pour ce chatbot : règles, offres à pousser, sujets à éviter, ton précis… Ce texte prime sur la configuration générale."
             />
-          </label>
+            <p className="text-[10px] text-muted-foreground">
+              Champ libre prioritaire, injecté en tête du prompt de ce bot.
+            </p>
+          </div>
+
+          {/* Coordonnées de l'agence */}
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Coordonnées de l'agence
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Téléphone</span>
+                <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="01 23 45 67 89" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Email</span>
+                <Input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="contact@agence.fr" />
+              </label>
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-xs text-muted-foreground">Adresse</span>
+                <Input value={contactAddress} onChange={(e) => setContactAddress(e.target.value)} placeholder="12 rue de la Paix, 75002 Paris" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Site web</span>
+                <Input value={contactWebsite} onChange={(e) => setContactWebsite(e.target.value)} placeholder="https://agence.fr" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Horaires</span>
+                <Input value={contactHours} onChange={(e) => setContactHours(e.target.value)} placeholder="Lun–Ven 9h–19h" />
+              </label>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Messages
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Message d'accueil</span>
+              <textarea
+                className={TC_TEXTAREA}
+                rows={2}
+                value={msgWelcome}
+                onChange={(e) => setMsgWelcome(e.target.value)}
+                placeholder="Bonjour 👋 Comment puis-je vous aider dans votre projet immobilier ?"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Message de repli (fallback)</span>
+              <textarea
+                className={TC_TEXTAREA}
+                rows={2}
+                value={msgFallback}
+                onChange={(e) => setMsgFallback(e.target.value)}
+                placeholder="Je n'ai pas la réponse exacte, mais un conseiller vous recontactera rapidement."
+              />
+            </label>
+          </div>
 
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={save} disabled={saving}>
@@ -1176,6 +1318,7 @@ function ChatbotsView({ nonce }: { nonce: number }) {
   const [err, setErr] = useState("");
   const [healthUnavailable, setHealthUnavailable] = useState(false);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [owners, setOwners] = useState<Record<string, TenantOwner>>({});
   const [q, setQ] = useState("");
   const [healthFilter, setHealthFilter] = useState<Health | "all">("all");
   const [sort, setSort] = useState<SortState>({ key: "health", dir: "asc" });
@@ -1187,17 +1330,20 @@ function ChatbotsView({ nonce }: { nonce: number }) {
     setErr("");
     setRows(null);
     setHealthUnavailable(false);
-    // Base list drives the table + purge (by tenant_id). Health overview is
-    // optional: if it fails the table still renders (graceful degradation).
+    // Base list drives the table + purge (by tenant_id). Health overview and the
+    // owner map are optional: if they fail the table still renders (graceful
+    // degradation — owners default to "—").
     Promise.all([
       getJSON("/api/admin/db/tenants"),
       getJSON("/api/priv/overview").catch(() => null),
+      getTenantOwners().catch(() => ({} as Record<string, TenantOwner>)),
     ])
-      .then(([t, ov]: any[]) => {
+      .then(([t, ov, ow]: any[]) => {
         const tenants: any[] = t?.tenants || [];
         const agencies: any[] = ov?.agencies || [];
         if (!ov || !Array.isArray(ov.agencies)) setHealthUnavailable(true);
         setGeneratedAt(ov?.generatedAt ?? null);
+        setOwners((ow as Record<string, TenantOwner>) || {});
         const byTenant = new Map<string, any>(agencies.map((a: any) => [a.tenantId, a]));
         const merged = tenants.map((tt: any) => {
           const a = byTenant.get(tt.tenant_id);
@@ -1467,6 +1613,7 @@ function ChatbotsView({ nonce }: { nonce: number }) {
                 <TableHeader>
                   <TableRow>
                     <SortHeader label="Chatbot / Agence" sortKey="tenant" sort={sort} onSort={toggleSort} />
+                    <TableHead>Client</TableHead>
                     <SortHeader label="État" sortKey="health" sort={sort} onSort={toggleSort} />
                     <TableHead>Widgets</TableHead>
                     <SortHeader label="Biens" sortKey="properties" sort={sort} onSort={toggleSort} align="right" />
@@ -1494,6 +1641,16 @@ function ChatbotsView({ nonce }: { nonce: number }) {
                             </span>
                             {t.tenant_id}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {owners[t.tenant_id] ? (
+                            <Badge variant="outline" className="max-w-[160px] gap-1 font-normal">
+                              <Building2 className="size-3 shrink-0" />
+                              <span className="truncate">{owners[t.tenant_id].clientName}</span>
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col items-start gap-0.5">
@@ -1588,6 +1745,610 @@ function ChatbotsView({ nonce }: { nonce: number }) {
       </CardContent>
       <BotDetail bot={selected} onClose={() => setSelected(null)} onDeleted={load} />
     </Card>
+  );
+}
+
+// ── Clients (CRM — portefeuille & rattachement des chatbots) ─────────────────
+
+const CLIENT_STATUS_CFG: Record<
+  ClientInfo["status"],
+  { label: string; variant: "default" | "secondary" | "outline" }
+> = {
+  active: { label: "Actif", variant: "default" },
+  prospect: { label: "Prospect", variant: "secondary" },
+  archived: { label: "Archivé", variant: "outline" },
+};
+
+const CLIENT_STATUS_OPTS: [ClientInfo["status"], string][] = [
+  ["active", "Actif"],
+  ["prospect", "Prospect"],
+  ["archived", "Archivé"],
+];
+
+function ClientCard({
+  client,
+  onManage,
+  onEdit,
+  onDelete,
+}: {
+  client: ClientInfo;
+  onManage: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const cfg = CLIENT_STATUS_CFG[client.status] || CLIENT_STATUS_CFG.prospect;
+  return (
+    <Card className="flex flex-col">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="truncate text-base">{client.name}</CardTitle>
+            <CardDescription className="truncate">
+              {client.company || client.legalName || "—"}
+            </CardDescription>
+          </div>
+          <Badge variant={cfg.variant} className="shrink-0">
+            {cfg.label}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <Bot className="size-3.5" /> {client.botCount} chatbot(s)
+          </span>
+          {client.dpaSigned && (
+            <Badge variant="outline" className="gap-1 text-[10px] text-emerald-400">
+              <ShieldCheck className="size-3" /> DPA
+            </Badge>
+          )}
+        </div>
+        <div className="space-y-1 text-xs text-muted-foreground">
+          {client.siren && <div className="truncate">SIREN · {client.siren}</div>}
+          {client.contractRef && <div className="truncate">Contrat · {client.contractRef}</div>}
+          {client.email && <div className="truncate">{client.email}</div>}
+        </div>
+        <div className="mt-auto flex items-center gap-1.5 pt-2">
+          <Button variant="secondary" size="sm" className="flex-1" onClick={onManage}>
+            <Eye className="size-4" /> Voir / gérer
+          </Button>
+          <UtilityButton icon={Pencil} tooltip="Éditer" onClick={onEdit} />
+          <UtilityButton icon={Trash2} tooltip="Supprimer" tone="danger" onClick={onDelete} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClientFormDialog({
+  open,
+  client,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  client: ClientInfo | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [status, setStatus] = useState<ClientInfo["status"]>("prospect");
+  const [legalName, setLegalName] = useState("");
+  const [siren, setSiren] = useState("");
+  const [vatNumber, setVatNumber] = useState("");
+  const [address, setAddress] = useState("");
+  const [contractRef, setContractRef] = useState("");
+  const [dpaSigned, setDpaSigned] = useState(false);
+  const [documentsUrl, setDocumentsUrl] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  // (Re)initialise the form whenever it opens or the edited client changes.
+  useEffect(() => {
+    if (!open) return;
+    setErr("");
+    setName(client?.name ?? "");
+    setCompany(client?.company ?? "");
+    setEmail(client?.email ?? "");
+    setPhone(client?.phone ?? "");
+    setStatus(client?.status ?? "prospect");
+    setLegalName(client?.legalName ?? "");
+    setSiren(client?.siren ?? "");
+    setVatNumber(client?.vatNumber ?? "");
+    setAddress(client?.address ?? "");
+    setContractRef(client?.contractRef ?? "");
+    setDpaSigned(client?.dpaSigned ?? false);
+    setDocumentsUrl(client?.documentsUrl ?? "");
+    setNotes(client?.notes ?? "");
+  }, [open, client]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setErr("Le nom est obligatoire.");
+      return;
+    }
+    setSaving(true);
+    setErr("");
+    const payload: ClientInput = {
+      name: name.trim(),
+      company: company.trim() || null,
+      email: email.trim() || null,
+      phone: phone.trim() || null,
+      status,
+      legalName: legalName.trim() || null,
+      siren: siren.trim() || null,
+      vatNumber: vatNumber.trim() || null,
+      address: address.trim() || null,
+      contractRef: contractRef.trim() || null,
+      dpaSigned,
+      documentsUrl: documentsUrl.trim() || null,
+      notes: notes.trim() || null,
+    };
+    try {
+      if (client) await updateClient(client.id, payload);
+      else await createClient(payload);
+      onSaved();
+    } catch (e: any) {
+      setErr(e?.message || "Échec de l'enregistrement");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{client ? "Éditer le client" : "Nouveau client"}</DialogTitle>
+          <DialogDescription>
+            {client
+              ? `Modifier la fiche de ${client.name}.`
+              : "Créer une fiche client pour y rattacher des chatbots."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <form id="client-form" onSubmit={submit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Nom *</span>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom du client" autoFocus />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Société</span>
+              <Input value={company} onChange={(e) => setCompany(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Email</span>
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Téléphone</span>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Statut</span>
+              <select
+                className={TC_SELECT}
+                value={status}
+                onChange={(e) => setStatus(e.target.value as ClientInfo["status"])}
+              >
+                {CLIENT_STATUS_OPTS.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Raison sociale</span>
+              <Input value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">SIREN</span>
+              <Input value={siren} onChange={(e) => setSiren(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">N° TVA</span>
+              <Input value={vatNumber} onChange={(e) => setVatNumber(e.target.value)} />
+            </label>
+            <label className="space-y-1 sm:col-span-2">
+              <span className="text-xs text-muted-foreground">Adresse</span>
+              <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Référence contrat</span>
+              <Input value={contractRef} onChange={(e) => setContractRef(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Lien vers les documents/contrats</span>
+              <Input value={documentsUrl} onChange={(e) => setDocumentsUrl(e.target.value)} placeholder="https://…" />
+            </label>
+          </div>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="size-4 rounded border-input accent-primary"
+              checked={dpaSigned}
+              onChange={(e) => setDpaSigned(e.target.checked)}
+            />
+            <span className="text-sm">DPA/RGPD signé</span>
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-xs text-muted-foreground">Notes</span>
+            <textarea
+              className={TC_TEXTAREA}
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Notes internes (jamais transmises aux chatbots)…"
+            />
+          </label>
+
+          {err && <p className="text-sm text-destructive">{err}</p>}
+        </form>
+
+        <DialogFooter>
+          <Button variant="outline" type="button" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button type="submit" form="client-form" disabled={saving}>
+            <Save className="size-4" /> {saving ? "Enregistrement…" : client ? "Enregistrer" : "Créer le client"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ClientDetailDialog({
+  client,
+  bots,
+  owners,
+  onClose,
+  onChanged,
+}: {
+  client: ClientInfo | null;
+  bots: any[];
+  owners: Record<string, TenantOwner>;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [assigned, setAssigned] = useState<string[]>([]);
+  const [toAssign, setToAssign] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // Reset local state each time we open the dialog for a (different) client.
+  useEffect(() => {
+    setAssigned(client?.tenantIds ?? []);
+    setToAssign("");
+    setErr("");
+  }, [client]);
+
+  // Tenants that can still be attached: not already on this client and not owned
+  // by anyone else (a tenant still mapped to THIS client in the owners map stays
+  // available once it's unassigned locally).
+  const available = useMemo(() => {
+    return (bots || [])
+      .map((b: any) => b.tenant_id as string)
+      .filter((tid: string) => {
+        if (!tid || assigned.includes(tid)) return false;
+        const owner = owners[tid];
+        if (owner && owner.clientId !== client?.id) return false;
+        return true;
+      })
+      .sort((a: string, b: string) => a.localeCompare(b));
+  }, [bots, owners, assigned, client]);
+
+  const doAssign = async () => {
+    if (!toAssign || !client) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await assignTenantToClient(client.id, toAssign);
+      setAssigned((a) => [...a, toAssign]);
+      setToAssign("");
+      onChanged();
+    } catch (e: any) {
+      setErr(e?.message || "Assignation impossible");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doUnassign = async (tid: string) => {
+    if (!client) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await unassignTenantFromClient(client.id, tid);
+      setAssigned((a) => a.filter((t) => t !== tid));
+      onChanged();
+    } catch (e: any) {
+      setErr(e?.message || "Retrait impossible");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!client) return null;
+  const cfg = CLIENT_STATUS_CFG[client.status] || CLIENT_STATUS_CFG.prospect;
+
+  return (
+    <Dialog open={!!client} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary">
+              <Building2 className="size-4" />
+            </span>
+            {client.name}
+            <Badge variant={cfg.variant} className="ml-1">
+              {cfg.label}
+            </Badge>
+          </DialogTitle>
+          <DialogDescription>{client.company || client.legalName || "Fiche client"}</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 gap-1.5 rounded-lg border bg-card/40 p-3 text-sm sm:grid-cols-2">
+          <DInfo label="Email" value={client.email || "—"} />
+          <DInfo label="Téléphone" value={client.phone || "—"} />
+          <DInfo label="Raison sociale" value={client.legalName || "—"} />
+          <DInfo label="SIREN" value={client.siren || "—"} />
+          <DInfo label="N° TVA" value={client.vatNumber || "—"} />
+          <DInfo label="Contrat" value={client.contractRef || "—"} />
+          <DInfo label="DPA/RGPD" value={client.dpaSigned ? "Signé ✓" : "Non signé"} />
+          <DInfo
+            label="Documents"
+            value={
+              client.documentsUrl ? (
+                <a
+                  href={client.documentsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                >
+                  Ouvrir <ExternalLink className="size-3" />
+                </a>
+              ) : (
+                "—"
+              )
+            }
+          />
+          {client.address && <DInfo label="Adresse" value={client.address} />}
+        </div>
+
+        {client.notes && (
+          <p className="whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
+            {client.notes}
+          </p>
+        )}
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Bot className="size-4 text-primary" />
+            <span className="text-sm font-medium">Chatbots rattachés</span>
+            <Badge variant="outline" className="ml-auto text-[10px]">
+              {assigned.length}
+            </Badge>
+          </div>
+
+          {assigned.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Aucun chatbot rattaché à ce client.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {assigned.map((tid) => (
+                <div key={tid} className="flex items-center gap-2 rounded-lg border bg-card/40 px-3 py-2">
+                  <span className="flex size-6 items-center justify-center rounded bg-primary/15 text-primary">
+                    <Bot className="size-3.5" />
+                  </span>
+                  <span className="truncate text-sm">{tid}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto text-destructive hover:text-destructive"
+                    disabled={busy}
+                    onClick={() => doUnassign(tid)}
+                  >
+                    Retirer
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-end gap-2 pt-1">
+            <label className="flex-1 space-y-1">
+              <span className="text-xs text-muted-foreground">Rattacher un chatbot</span>
+              <select
+                className={TC_SELECT}
+                value={toAssign}
+                onChange={(e) => setToAssign(e.target.value)}
+                disabled={busy || available.length === 0}
+              >
+                <option value="">
+                  {available.length === 0 ? "Aucun chatbot disponible" : "Choisir un chatbot…"}
+                </option>
+                {available.map((tid) => (
+                  <option key={tid} value={tid}>{tid}</option>
+                ))}
+              </select>
+            </label>
+            <Button onClick={doAssign} disabled={busy || !toAssign}>
+              <Plus className="size-4" /> Assigner
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Un chatbot ne peut appartenir qu'à un seul client. Les bots déjà rattachés ailleurs n'apparaissent pas.
+          </p>
+        </div>
+
+        {err && <p className="text-sm text-destructive">{err}</p>}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Fermer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ClientsView({ nonce }: { nonce: number }) {
+  const [clients, setClients] = useState<ClientInfo[] | null>(null);
+  const [bots, setBots] = useState<any[]>([]);
+  const [owners, setOwners] = useState<Record<string, TenantOwner>>({});
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<ClientInfo | null>(null);
+  const [managing, setManaging] = useState<ClientInfo | null>(null);
+
+  const load = useCallback(() => {
+    setErr("");
+    Promise.all([
+      listClients(),
+      getJSON<{ tenants?: any[] }>("/api/admin/db/tenants").catch(() => ({ tenants: [] })),
+      getTenantOwners().catch(() => ({} as Record<string, TenantOwner>)),
+    ])
+      .then(([cl, t, ow]) => {
+        setClients(cl);
+        setBots((t as { tenants?: any[] })?.tenants || []);
+        setOwners((ow as Record<string, TenantOwner>) || {});
+      })
+      .catch((e) => setErr(e?.message || "Erreur"));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load, nonce]);
+
+  const openCreate = () => {
+    setEditing(null);
+    setFormOpen(true);
+  };
+  const openEdit = (c: ClientInfo) => {
+    setEditing(c);
+    setFormOpen(true);
+  };
+
+  const removeClient = async (c: ClientInfo) => {
+    if (
+      !window.confirm(
+        `Supprimer le client « ${c.name} » ? Ses chatbots seront détachés (mais pas supprimés).`,
+      )
+    )
+      return;
+    try {
+      await deleteClient(c.id);
+      load();
+    } catch (e: any) {
+      setErr(e?.message || "Suppression impossible");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    const list = clients || [];
+    const s = q.trim().toLowerCase();
+    if (!s) return list;
+    return list.filter((c) =>
+      [c.name, c.company, c.legalName, c.email, c.siren, c.contractRef]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(s)),
+    );
+  }, [clients, q]);
+
+  const totalBots = (clients || []).reduce((n, c) => n + (c.botCount || 0), 0);
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-primary/20">
+        <CardContent className="flex flex-wrap items-center gap-4 py-4">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/20">
+            <Icon3D name="clients" size={26} alt="" />
+          </span>
+          <div className="mr-auto">
+            <CardTitle className="text-base">Clients</CardTitle>
+            <CardDescription className="mt-1">
+              {clients
+                ? `${clients.length} client(s) · ${totalBots} chatbot(s) rattaché(s)`
+                : "Portefeuille clients & rattachement des chatbots"}
+            </CardDescription>
+          </div>
+          <div className="relative w-56 max-w-full">
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Rechercher un client…"
+              className="pl-8"
+            />
+          </div>
+          <GradientButton onClick={openCreate}>
+            <Plus className="size-4" /> Nouveau client
+          </GradientButton>
+        </CardContent>
+      </Card>
+
+      {err ? (
+        <ErrorState message={err} onRetry={load} />
+      ) : !clients ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} className="h-44 rounded-xl" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+          <Icon3D name="clients" size={40} alt="" className="opacity-70" />
+          <p className="text-sm text-muted-foreground">
+            {clients.length === 0
+              ? "Aucun client enregistré pour le moment."
+              : "Aucun client ne correspond à la recherche."}
+          </p>
+          {clients.length === 0 && (
+            <Button variant="outline" size="sm" onClick={openCreate}>
+              <Plus className="size-4" /> Créer le premier client
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((c) => (
+            <ClientCard
+              key={c.id}
+              client={c}
+              onManage={() => setManaging(c)}
+              onEdit={() => openEdit(c)}
+              onDelete={() => removeClient(c)}
+            />
+          ))}
+        </div>
+      )}
+
+      <ClientFormDialog
+        open={formOpen}
+        client={editing}
+        onClose={() => setFormOpen(false)}
+        onSaved={() => {
+          setFormOpen(false);
+          load();
+        }}
+      />
+      <ClientDetailDialog
+        client={managing}
+        bots={bots}
+        owners={owners}
+        onClose={() => setManaging(null)}
+        onChanged={load}
+      />
+    </div>
   );
 }
 
@@ -2336,16 +3097,18 @@ export function CommandCenter() {
       ? "Vue d'ensemble"
       : view === "chatbots"
         ? "Chatbots déployés"
-        : view === "surveillance"
-          ? "Mur de surveillance"
-          : view === "workers"
-            ? "Workers Cloudflare"
-            : view === "conversations"
-              ? "Conversations & Leads"
-              : "Infrastructure";
+        : view === "clients"
+          ? "Clients"
+          : view === "surveillance"
+            ? "Mur de surveillance"
+            : view === "workers"
+              ? "Workers Cloudflare"
+              : view === "conversations"
+                ? "Conversations & Leads"
+                : "Infrastructure";
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar
         view={view}
         setView={setView}
@@ -2385,6 +3148,7 @@ export function CommandCenter() {
         <div className="p-4 sm:p-6">
           {view === "overview" && <OverviewView nonce={nonce} />}
           {view === "chatbots" && <ChatbotsView nonce={nonce} />}
+          {view === "clients" && <ClientsView nonce={nonce} />}
           {view === "surveillance" && <SurveillanceView nonce={nonce} onSelect={setSelected} />}
           {view === "workers" && <WorkersView nonce={nonce} />}
           {view === "conversations" && <ConversationsView nonce={nonce} />}

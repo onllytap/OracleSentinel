@@ -18,6 +18,7 @@ import shield from "../../../assets/icon/3dicons-shield-dynamic-color.png";
 import key from "../../../assets/icon/3dicons-key-dynamic-color.png";
 import settings from "../../../assets/icon/3dicons-setting-dynamic-color.png";
 import rocket from "../../../assets/icon/3dicons-rocket-dynamic-color.png";
+import clients from "../../../assets/icon/3dicons-crown-dynamic-color.png";
 
 export const ICON3D = {
   overview,
@@ -30,6 +31,7 @@ export const ICON3D = {
   key,
   settings,
   rocket,
+  clients,
 } as const;
 
 export type Icon3DName = keyof typeof ICON3D;
