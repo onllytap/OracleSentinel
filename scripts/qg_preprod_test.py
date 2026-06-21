@@ -361,6 +361,103 @@ def main():
     r.no_500("malformed JSON handled (no 500)", st)
     r.check("malformed JSON -> 400", st == 400, f"got {st}")
 
+    # ── 7.5 Wave 1 endpoints: CRM / billing / provisioning / metrics ─────────
+    r.section("7.5 Wave 1 (CRM / billing / provisioning / metrics)")
+
+    # Gating: every new endpoint must require a session (401 when anonymous).
+    for path in [
+        "/api/priv/billing/plans",
+        f"/api/priv/tenants/{TEST_TENANT}/crm",
+        f"/api/priv/tenants/{TEST_TENANT}/billing",
+        f"/api/priv/tenants/{TEST_TENANT}/metrics",
+        "/api/priv/tenants",
+    ]:
+        st, _ = anon.get(path)
+        r.check(f"GET {path} without session -> 401", st == 401, f"got {st}")
+
+    # Billing plans (read-only, public pricing/quotas — no secrets).
+    st, body = c.get("/api/priv/billing/plans")
+    r.check("GET /billing/plans -> 200", st == 200, f"got {st}")
+    plan_ids = (
+        sorted([p.get("id") for p in body.get("plans", [])])
+        if isinstance(body, dict) else []
+    )
+    r.check("plans include starter/pro/scale",
+            plan_ids == ["pro", "scale", "starter"], f"got {plan_ids}")
+
+    # Per-tenant billing (read-only) + metrics (read-only).
+    st, _ = c.get(f"/api/priv/tenants/{TEST_TENANT}/billing")
+    r.check("GET tenant billing -> 200", st == 200, f"got {st}")
+
+    st, body = c.get(f"/api/priv/tenants/{TEST_TENANT}/metrics")
+    r.check("GET tenant metrics -> 200", st == 200, f"got {st}")
+    if isinstance(body, dict):
+        rr = body.get("responseRate")
+        r.check("responseRate within 0..100",
+                isinstance(rr, (int, float)) and 0 <= rr <= 100, f"got {rr}")
+        r.check("metrics expose measuredLatencyMs key", "measuredLatencyMs" in body)
+
+    # CRM config: default = provider 'none', no creds, and NEVER leaks a secret.
+    st, body = c.get(f"/api/priv/tenants/{TEST_TENANT}/crm")
+    r.check("GET tenant crm -> 200", st == 200, f"got {st}")
+    r.check("crm default hasCredentials=false",
+            isinstance(body, dict) and body.get("hasCredentials") is False)
+
+    secret_marker = "ZZZSECRET" + RUN_TAG
+    st, _ = c.put(f"/api/priv/tenants/{TEST_TENANT}/crm", {
+        "provider": "webhook", "enabled": False,
+        "fieldMappings": {"phone": "tel"},
+        "secrets": {"url": "https://example.test/hook",
+                    "secret": secret_marker, "headerName": "X-Token"},
+    })
+    r.check("PUT tenant crm (webhook) -> 200", st == 200, f"got {st}")
+
+    st, body = c.get(f"/api/priv/tenants/{TEST_TENANT}/crm")
+    leaked = secret_marker in json.dumps(body) if body is not None else False
+    r.check("crm hasCredentials=true after save",
+            isinstance(body, dict) and body.get("hasCredentials") is True)
+    r.check("crm response NEVER leaks the stored secret", not leaked)
+
+    st, _ = c.put(f"/api/priv/tenants/{TEST_TENANT}/crm",
+                  {"provider": "none", "enabled": False}, with_csrf=False)
+    r.check("PUT tenant crm WITHOUT csrf -> 403", st == 403, f"got {st}")
+
+    st, _ = c.get("/api/priv/tenants/bad!id/crm")
+    r.check("GET crm invalid tenant id -> 400", st == 400, f"got {st}")
+    # Reset CRM provider to none (cleanup).
+    c.put(f"/api/priv/tenants/{TEST_TENANT}/crm", {"provider": "none", "enabled": False})
+
+    # Provisioning: create a managed agency + copyable embed snippet, lifecycle.
+    prov_tid = None
+    st, body = c.post("/api/priv/tenants/provision",
+                      {"name": TEST_PREFIX + "Agence " + RUN_TAG})
+    r.check("provision tenant -> 200", st == 200, f"got {st}")
+    if isinstance(body, dict) and body.get("tenant"):
+        prov_tid = body["tenant"].get("tenantId")
+        wid = body["tenant"].get("widgetId", "")
+        r.check("provision returns a widget_id", bool(wid))
+        r.check("embed snippet contains the widget_id",
+                isinstance(body.get("embedSnippet"), str) and wid in body.get("embedSnippet", ""))
+
+    if prov_tid:
+        st, _ = c.post(f"/api/priv/tenants/{prov_tid}/status", {"status": "suspended"})
+        r.check("suspend provisioned tenant -> 200", st == 200, f"got {st}")
+        st, body = c.get(f"/api/priv/tenants/{prov_tid}")
+        r.check("provisioned tenant status=suspended",
+                isinstance(body, dict) and body.get("tenant", {}).get("status") == "suspended")
+        st, _ = c.post(f"/api/priv/tenants/{prov_tid}/status", {"status": "archived"})
+        r.check("archive provisioned tenant -> 200", st == 200, f"got {st}")
+
+    st, _ = c.post("/api/priv/tenants/provision", {})  # missing name
+    r.check("provision WITHOUT name -> 400", st == 400, f"got {st}")
+
+    # Stripe webhook (PUBLIC, raw body): an unsigned/bad request must be 400,
+    # never 500, and never crash (no STRIPE_WEBHOOK_SECRET -> rejected cleanly).
+    st, _ = c.post("/api/billing/webhook",
+                   raw_body=json.dumps({"type": "ping"}), with_csrf=False)
+    r.no_500("stripe webhook bad signature handled (no 500)", st)
+    r.check("stripe webhook bad signature -> 400", st == 400, f"got {st}")
+
     # ── 8. Optional destructive purge (test tenant only) ─────────────────────
     if args.allow_purge:
         r.section("8. Purge (test tenant only)")
