@@ -13,6 +13,18 @@ import {
 import { CatalogImportService } from "../services/catalog-import.service";
 import { pool } from "../db/pool";
 import { safeCount } from "./admin-utils";
+import {
+  buildRegistrationOptions,
+  confirmRegistration,
+  buildAuthenticationOptions,
+  confirmAuthentication,
+  signChallengeToken,
+  verifyChallengeToken,
+  listPasskeys,
+  countPasskeys,
+  deletePasskey,
+  PASSKEY_CHALLENGE_COOKIE,
+} from "../services/passkey.service";
 
 function getEnv(name: string, fallback?: string): string {
   const v = process.env[name];
@@ -105,6 +117,40 @@ function clearCookie(res: any, name: string) {
   if (secure) parts.push("Secure");
   parts.push("Max-Age=0");
   res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+// Build a single Set-Cookie string sharing the admin cookie attributes.
+// csrf_token must remain readable by JS (httpOnly:false) for the double-submit
+// pattern; admin_session and the passkey challenge stay HttpOnly.
+function buildCookieString(
+  name: string,
+  value: string,
+  opts: { maxAgeSeconds: number; httpOnly?: boolean },
+): string {
+  const { secure, sameSite } = cookieBaseAttrs();
+  const parts: string[] = [`${name}=${encodeURIComponent(value)}`, "Path=/"];
+  if (opts.httpOnly !== false) parts.push("HttpOnly");
+  parts.push(`SameSite=${sameSite}`);
+  if (secure) parts.push("Secure");
+  parts.push(`Max-Age=${opts.maxAgeSeconds}`);
+  return parts.join("; ");
+}
+
+function readReqCookie(req: any, name: string): string {
+  const header = req?.headers?.cookie;
+  if (!header || typeof header !== "string") return "";
+  for (const part of header.split(";")) {
+    const i = part.indexOf("=");
+    if (i === -1) continue;
+    if (part.slice(0, i).trim() === name) {
+      try {
+        return decodeURIComponent(part.slice(i + 1).trim());
+      } catch {
+        return "";
+      }
+    }
+  }
+  return "";
 }
 
 async function signAdminSessionToken(): Promise<string> {
@@ -244,6 +290,197 @@ router.post("/logout", requireAdminSession(), requireCSRF(), async (_req, res) =
 router.get("/status", requireAdminSession(), async (_req, res) => {
   return res.json({ authenticated: true });
 });
+
+// ── Passkey (WebAuthn / FIDO2) endpoints ────────────────────────────────────
+// Passwordless QG login. ADMIN_API_KEY (POST /session) stays as the break-glass
+// fallback. The per-ceremony challenge is held in a short-lived signed cookie.
+
+const CHALLENGE_COOKIE_MAX_AGE = 5 * 60;
+
+// Whether at least one passkey is enrolled (PUBLIC). Lets the login UI decide
+// to show the "Sign in with a passkey" button. Reveals only existence, which is
+// acceptable for a single-admin tool.
+router.get("/passkey/available", async (_req, res) => {
+  const count = await countPasskeys();
+  return res.json({ available: count > 0, count });
+});
+
+// List enrolled passkeys (metadata only — never the public key). Gated.
+router.get("/passkey/list", requireAdminSession(), async (_req, res) => {
+  const rows = await listPasskeys();
+  return res.json({
+    success: true,
+    passkeys: rows.map((p) => ({
+      credentialId: p.credentialId,
+      label: p.label,
+      deviceType: p.deviceType,
+      backedUp: p.backedUp,
+      transports: p.transports,
+      createdAt: p.createdAt,
+      lastUsedAt: p.lastUsedAt,
+    })),
+  });
+});
+
+// Begin enrollment (gated): generate options + stash challenge in a cookie.
+router.post(
+  "/passkey/register/options",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "50kb" }),
+  async (_req, res) => {
+    try {
+      const options = await buildRegistrationOptions();
+      const token = await signChallengeToken(options.challenge, "register");
+      res.setHeader(
+        "Set-Cookie",
+        buildCookieString(PASSKEY_CHALLENGE_COOKIE, token, {
+          maxAgeSeconds: CHALLENGE_COOKIE_MAX_AGE,
+          httpOnly: true,
+        }),
+      );
+      return res.json(options);
+    } catch (err: any) {
+      console.error("[Passkey] register/options failed:", err?.message);
+      return res
+        .status(500)
+        .json({ error: "Impossible de générer les options d'enrôlement." });
+    }
+  },
+);
+
+// Finish enrollment (gated): verify attestation + persist the credential.
+router.post(
+  "/passkey/register/verify",
+  requireAdminSession(),
+  requireCSRF(),
+  express.json({ limit: "50kb" }),
+  async (req, res) => {
+    const challenge = await verifyChallengeToken(
+      readReqCookie(req, PASSKEY_CHALLENGE_COOKIE),
+      "register",
+    );
+    clearCookie(res, PASSKEY_CHALLENGE_COOKIE);
+    if (!challenge) {
+      return res
+        .status(400)
+        .json({ error: "Défi d'enrôlement expiré ou absent. Réessayez." });
+    }
+
+    const response = req.body?.response ?? req.body;
+    const label = typeof req.body?.label === "string" ? req.body.label : undefined;
+    if (!response || typeof response !== "object") {
+      return res.status(400).json({ error: "Réponse d'enrôlement manquante." });
+    }
+
+    const result = await confirmRegistration({
+      response,
+      expectedChallenge: challenge,
+      label,
+    });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error || "Enrôlement refusé." });
+    }
+    return res.json({ success: true });
+  },
+);
+
+// Delete an enrolled passkey (gated).
+router.delete(
+  "/passkey/:credentialId",
+  requireAdminSession(),
+  requireCSRF(),
+  async (req, res) => {
+    const raw = req.params.credentialId;
+    const credentialId = (Array.isArray(raw) ? raw[0] : raw)?.trim();
+    if (!credentialId) {
+      return res.status(400).json({ error: "credentialId requis." });
+    }
+    const deleted = await deletePasskey(credentialId);
+    return res.json({ success: true, deleted });
+  },
+);
+
+// Begin authentication (PUBLIC): generate options + stash challenge in a cookie.
+router.post(
+  "/passkey/auth/options",
+  express.json({ limit: "10kb" }),
+  async (_req, res) => {
+    try {
+      if ((await countPasskeys()) === 0) {
+        return res.status(400).json({ error: "Aucune passkey enregistrée." });
+      }
+      const options = await buildAuthenticationOptions();
+      const token = await signChallengeToken(options.challenge, "auth");
+      res.setHeader(
+        "Set-Cookie",
+        buildCookieString(PASSKEY_CHALLENGE_COOKIE, token, {
+          maxAgeSeconds: CHALLENGE_COOKIE_MAX_AGE,
+          httpOnly: true,
+        }),
+      );
+      return res.json(options);
+    } catch (err: any) {
+      console.error("[Passkey] auth/options failed:", err?.message);
+      return res
+        .status(500)
+        .json({ error: "Impossible de générer les options de connexion." });
+    }
+  },
+);
+
+// Finish authentication (PUBLIC): verify assertion. On success, emit the same
+// admin_session + csrf_token cookies as POST /session and clear the challenge.
+router.post(
+  "/passkey/auth/verify",
+  express.json({ limit: "50kb" }),
+  async (req, res) => {
+    const challenge = await verifyChallengeToken(
+      readReqCookie(req, PASSKEY_CHALLENGE_COOKIE),
+      "auth",
+    );
+    if (!challenge) {
+      clearCookie(res, PASSKEY_CHALLENGE_COOKIE);
+      return res
+        .status(400)
+        .json({ error: "Défi de connexion expiré ou absent. Réessayez." });
+    }
+
+    const response = req.body?.response ?? req.body;
+    if (!response || typeof response !== "object") {
+      clearCookie(res, PASSKEY_CHALLENGE_COOKIE);
+      return res.status(400).json({ error: "Réponse de connexion manquante." });
+    }
+
+    const result = await confirmAuthentication({
+      response,
+      expectedChallenge: challenge,
+    });
+    if (!result.ok) {
+      clearCookie(res, PASSKEY_CHALLENGE_COOKIE);
+      return res.status(401).json({ error: result.error || "Connexion refusée." });
+    }
+
+    // Success → issue the admin session (same shape as the API-key login).
+    const sessionToken = await signAdminSessionToken();
+    const csrfToken = generateCSRFToken();
+    res.setHeader("Set-Cookie", [
+      buildCookieString("admin_session", sessionToken, {
+        maxAgeSeconds: 30 * 60,
+        httpOnly: true,
+      }),
+      buildCookieString("csrf_token", csrfToken, {
+        maxAgeSeconds: 30 * 60,
+        httpOnly: false,
+      }),
+      buildCookieString(PASSKEY_CHALLENGE_COOKIE, "", {
+        maxAgeSeconds: 0,
+        httpOnly: true,
+      }),
+    ]);
+    return res.json({ success: true });
+  },
+);
 
 // ── Catalog Import endpoints (existing) ─────────────────────────────────────
 

@@ -196,6 +196,24 @@ CREATE TABLE IF NOT EXISTS tenant_config_versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tenant_config_versions_tenant_created ON tenant_config_versions (tenant_id, created_at DESC);
+
+-- ── Admin passkeys (WebAuthn / FIDO2) for the Command Center login ─────────
+-- Passwordless login for the QG. ADMIN_API_KEY remains the break-glass
+-- fallback. We store ONLY public material (COSE public key + metadata) — never
+-- a secret. credential_id and public_key are base64url strings.
+CREATE TABLE IF NOT EXISTS admin_passkeys (
+    credential_id TEXT PRIMARY KEY,
+    public_key TEXT NOT NULL,
+    counter BIGINT NOT NULL DEFAULT 0,
+    transports TEXT[] NOT NULL DEFAULT '{}',
+    device_type VARCHAR(32),
+    backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+    label VARCHAR(120),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_used_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_passkeys_created ON admin_passkeys (created_at DESC);
 `;
 
 export async function ensureDbSchema(): Promise<void> {

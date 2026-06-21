@@ -9,10 +9,13 @@ import {
   Cloud,
   Eye,
   ExternalLink,
+  Fingerprint,
   Gauge,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  Plus,
   Radio,
   RefreshCw,
   Save,
@@ -72,7 +75,20 @@ import { GradientButton, UtilityButton } from "./components/fancy-buttons";
 import { BadgeGroup } from "./components/badge-group";
 import { WorldGrid } from "./components/world-grid";
 import { Icon8, Icons8Attribution } from "./components/icon8";
-import { apiFetch, checkSession, getJSON, login, logout } from "./api";
+import {
+  apiFetch,
+  checkSession,
+  getJSON,
+  login,
+  logout,
+  passkeyAvailable,
+  passkeySupported,
+  passkeyLogin,
+  passkeyRegister,
+  passkeyList,
+  passkeyDelete,
+  type PasskeyInfo,
+} from "./api";
 
 type View = "overview" | "chatbots" | "surveillance" | "workers" | "conversations" | "infra";
 
@@ -99,6 +115,19 @@ function LoginGate({ onAuthed }: { onAuthed: () => void }) {
   const [key, setKey] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pkBusy, setPkBusy] = useState(false);
+  const [canPasskey, setCanPasskey] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    if (!passkeySupported()) return;
+    passkeyAvailable().then((ok) => {
+      if (alive) setCanPasskey(ok);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,6 +140,20 @@ function LoginGate({ onAuthed }: { onAuthed: () => void }) {
       setErr(e?.message || "Erreur.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const doPasskey = async () => {
+    setErr("");
+    setPkBusy(true);
+    try {
+      await passkeyLogin();
+      onAuthed();
+    } catch (e: any) {
+      // A user-cancelled WebAuthn prompt throws too — keep the message gentle.
+      setErr(e?.message || "Connexion par passkey impossible.");
+    } finally {
+      setPkBusy(false);
     }
   };
 
@@ -129,6 +172,25 @@ function LoginGate({ onAuthed }: { onAuthed: () => void }) {
           </div>
         </CardHeader>
         <CardContent>
+          {canPasskey && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2"
+                onClick={doPasskey}
+                disabled={pkBusy || busy}
+              >
+                <Fingerprint className="size-4" />
+                {pkBusy ? "Authentification…" : "Se connecter avec une passkey"}
+              </Button>
+              <div className="my-4 flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-xs text-muted-foreground">ou</span>
+                <Separator className="flex-1" />
+              </div>
+            </>
+          )}
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm text-muted-foreground">Clé d'accès super-admin</label>
@@ -140,7 +202,7 @@ function LoginGate({ onAuthed }: { onAuthed: () => void }) {
                 autoFocus
               />
             </div>
-            <GradientButton type="submit" className="w-full" disabled={busy}>
+            <GradientButton type="submit" className="w-full" disabled={busy || pkBusy}>
               {busy ? "Vérification…" : "Déverrouiller le bunker"}
             </GradientButton>
             {err && <p className="text-sm text-destructive">{err}</p>}
@@ -151,6 +213,157 @@ function LoginGate({ onAuthed }: { onAuthed: () => void }) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ── Passkey manager (enroll / list / remove device passkeys) ─────────────────
+
+function PasskeyManager() {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<PasskeyInfo[] | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [label, setLabel] = useState("");
+  const supported = passkeySupported();
+
+  const refresh = useCallback(async () => {
+    setErr("");
+    try {
+      setItems(await passkeyList());
+    } catch (e: any) {
+      setErr(e?.message || "Chargement impossible.");
+      setItems([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) refresh();
+  }, [open, refresh]);
+
+  const add = async () => {
+    setErr("");
+    setBusy(true);
+    try {
+      await passkeyRegister(label.trim() || undefined);
+      setLabel("");
+      await refresh();
+    } catch (e: any) {
+      setErr(e?.message || "Enrôlement impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    setErr("");
+    setBusy(true);
+    try {
+      await passkeyDelete(id);
+      await refresh();
+    } catch (e: any) {
+      setErr(e?.message || "Suppression impossible.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        className="w-full justify-start gap-3 text-muted-foreground"
+        onClick={() => setOpen(true)}
+      >
+        <KeyRound className="size-4" />
+        Passkeys
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Fingerprint className="size-5" /> Passkeys
+            </DialogTitle>
+            <DialogDescription>
+              Connexion sans mot de passe (empreinte, Face ID, téléphone). La clé d'accès
+              super-admin reste utilisable en secours.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!supported && (
+            <p className="text-sm text-amber-400">
+              Ce navigateur ne supporte pas les passkeys.
+            </p>
+          )}
+
+          <div className="space-y-3">
+            <div className="flex items-end gap-2">
+              <div className="flex-1 space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  Nom de l'appareil (optionnel)
+                </label>
+                <Input
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="Pixel 9a"
+                  disabled={!supported || busy}
+                />
+              </div>
+              <Button onClick={add} disabled={!supported || busy} className="gap-2">
+                <Plus className="size-4" /> Ajouter
+              </Button>
+            </div>
+
+            {err && <p className="text-sm text-destructive">{err}</p>}
+
+            <div className="space-y-2">
+              {items === null ? (
+                <p className="text-sm text-muted-foreground">Chargement…</p>
+              ) : items.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Aucune passkey enregistrée.</p>
+              ) : (
+                items.map((p) => (
+                  <div
+                    key={p.credentialId}
+                    className="flex items-center justify-between rounded-lg border p-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <Fingerprint className="size-4 text-muted-foreground" />
+                        {p.label || "Passkey"}
+                        {p.backedUp && (
+                          <Badge variant="outline" className="text-[10px]">
+                            synchronisée
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Ajoutée le {fmtDate(p.createdAt)}
+                        {p.lastUsedAt ? ` · utilisée ${fmtDate(p.lastUsedAt)}` : ""}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => remove(p.credentialId)}
+                      disabled={busy}
+                      aria-label="Supprimer la passkey"
+                    >
+                      <Trash2 className="size-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -230,6 +443,7 @@ function Sidebar({
           </div>
         )}
         <Separator className="my-3" />
+        <PasskeyManager />
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-muted-foreground"
