@@ -15,6 +15,10 @@ This feature (v2) turns the Command Center from an observation tool into a **rem
 
 Today the "factory" configuration (`loadCurrentConfig` / `saveConfig`, `/api/factory/config`, `/api/factory/build`) is **global**: a single `AgentConfig` is persisted to one `.env` file and a build rewrites that file for the whole process, which serves all tenants through a `WIDGET_TENANT_MAP`. There is no separate process per agency. Remote per-agency control therefore requires introducing a **per-tenant configuration layer** that is stored, applied, and redeployed for one tenant without disrupting the others. Requirement 1 and Requirement 3 address this constraint explicitly. Some supervision metrics (measured latency/ping, response rate) do not exist yet and require **new instrumentation** (Requirement 7).
 
+### Erratum (v2.1 — serving path)
+
+The Introduction above describes the SPA as served at `/dashboard.html`. This is **obsolete**. The Command Center React SPA (`src/dashboard/CommandCenter.tsx`) is now built by the repo-root `npm run build` into `build/dashboard.html` and **served in production at `/qg`** (with a strict CSP), gated by the admin session. The lightweight `/priv` page is kept as a fallback. Likewise, some `/api/admin/db/*` paths cited in the Introduction are legacy; the fleet/supervision data now also flows through `/api/priv/*` (`overview`, `surveillance`, `infra`, `workers`). **The behavior described by Requirements 1–16 remains valid** — only the page URL and a few endpoint names have moved. New v2.1 work (Requirements 17–19) targets `/qg` and `/api/priv/*`.
+
 ## Glossary
 
 - **Operator**: The authenticated super-admin human user who uses the Command Center. The only persona in scope.
@@ -48,6 +52,15 @@ Today the "factory" configuration (`loadCurrentConfig` / `saveConfig`, `/api/fac
 - **Settings_Area**: The dashboard area, labelled "Settings" / "Paramètres", that hosts security options including TOTP_Enrollment management and is the extensible container for additional security settings.
 - **Admin_Session**: The authenticated, CSRF-protected session required to call mutating Command_Center endpoints.
 - **Audit_Log**: A persisted, append-only record of Operator actions (config edits, redeploys, rollbacks, auth events).
+- **Tenant_CRM_Config**: A per-Tenant_Id record describing how that agency's qualified leads are pushed to its own CRM: the Crm_Provider, an enabled flag, the encrypted provider credentials, and a field mapping. Secrets are stored encrypted and never returned by any API.
+- **Crm_Provider**: The destination CRM type for a Tenant_CRM_Config, one of `none`, `twenty`, `airtable`, or `webhook` (a generic signed HTTP endpoint).
+- **Plan**: A commercial tier (`starter`, `pro`, `scale`) with a configurable monthly price and a set of Quotas, assigned to a Tenant.
+- **Usage_Event**: A metered unit of consumption recorded per Tenant_Id (kind ∈ message, lead, conversation; with a quantity and timestamp) used for billing and quota accounting. Only recorded when billing is enabled.
+- **Quota**: The maximum allowed quantity of a metered kind for a Plan over a billing period; exceeding it puts the Tenant in an over-quota state.
+- **Subscription**: The billing relationship between a Tenant and Stripe (customer id, subscription id, plan, status, current period end), updated by verified Stripe webhooks.
+- **Provisioning**: The super-admin operation that creates a new Tenant (name, plan, status), generates its Widget_Id, and returns its Embed_Snippet.
+- **Embed_Snippet**: The copyable HTML/script snippet an agency pastes on its site to load its widget, parameterized by the Tenant's Widget_Id.
+- **Widget_Id**: The stable public identifier minted at Provisioning that maps an embedded widget to its Tenant_Id (via the widget auth), distinct from any secret.
 
 ## Requirements
 
@@ -260,3 +273,47 @@ Today the "factory" configuration (`loadCurrentConfig` / `saveConfig`, `/api/fac
 2. WHEN an Operator action fails, THE Command_Center SHALL display a human-readable error message describing the failure.
 3. WHEN the Operator views a Bot whose active Config_Version is out of date, THE Command_Center SHALL display a visible out-of-date indicator.
 4. THE Command_Center SHALL present configuration, control, and supervision actions using consistent labels and iconography across the Chatbots and Surveillance views.
+
+### Requirement 17: Push leads to each agency's own CRM (encrypted)
+
+**User Story:** As an Operator, I want each agency's qualified leads pushed into that agency's own CRM, so that every client receives its leads where it already works.
+
+#### Acceptance Criteria
+
+1. THE Tenant_CRM_Config SHALL support a Crm_Provider in the set `{none, twenty, airtable, webhook}` per Tenant_Id.
+2. WHEN the Operator saves provider credentials for a Tenant_CRM_Config, THE Command_Center SHALL store them encrypted with AES-256-GCM derived from `APP_ENCRYPTION_KEY` and SHALL NOT persist them in cleartext.
+3. WHEN the Command_Center returns a Tenant_CRM_Config, THE Command_Center SHALL exclude every secret value (API keys, tokens, webhook secrets) from the response.
+4. THE Tenant_CRM_Config SHALL provide a configurable field mapping from the canonical fields (firstName, lastName, phone, email, need, qualification, notes) to the Crm_Provider's fields.
+5. WHEN the Operator runs a connection test for a Tenant_CRM_Config, THE Command_Center SHALL return only a success/failure result and a non-secret message.
+6. WHEN a qualified lead is captured for a Tenant_Id whose Tenant_CRM_Config is enabled, THE Command_Center SHALL push the lead to that tenant's CRM using its configured field mapping.
+7. WHERE no enabled Tenant_CRM_Config exists for a Tenant_Id, THE Command_Center SHALL fall back to the existing global CRM behavior unchanged.
+8. IF a per-tenant CRM push fails, THEN THE Command_Center SHALL append a PII-safe Audit_Log entry and SHALL NOT crash the chat.
+9. IF the system runs in production without `APP_ENCRYPTION_KEY` configured, THEN THE Command_Center SHALL refuse to handle CRM secrets and SHALL NOT store them in cleartext.
+
+### Requirement 18: Billing and quotas (Stripe), fully disableable
+
+**User Story:** As an Operator, I want optional usage-based billing with quotas, so that the platform can be sold by subscription without changing anything when billing is turned off.
+
+#### Acceptance Criteria
+
+1. THE Command_Center SHALL define three Plans (`starter`, `pro`, `scale`), each with a configurable monthly price and configurable Quotas.
+2. WHERE `BILLING_ENABLED` is false, THE Command_Center SHALL operate fully without metering, paywall, or Stripe calls, with no change to existing behavior.
+3. WHERE `BILLING_ENABLED` is true, THE Command_Center SHALL record Usage_Events (messages, leads, conversations) per Tenant_Id.
+4. WHEN a Tenant exceeds its Quota, THE Command_Center SHALL return a clear paywall response and SHALL expose an over-quota state to the QG.
+5. WHEN a Stripe webhook request is received, THE Command_Center SHALL verify its signature against `STRIPE_WEBHOOK_SECRET` on a public raw-body route and SHALL update the Subscription status accordingly.
+6. WHEN the Operator views a Tenant, THE Command_Center SHALL display that Tenant's plan, Subscription status, and usage versus Quota.
+7. WHEN the Command_Center renders any billing information, THE Command_Center SHALL exclude secret keys and SHALL append an Audit_Log entry for billing changes.
+
+### Requirement 19: Agency provisioning by the super-admin
+
+**User Story:** As an Operator, I want to provision a new agency in one action and get a ready-to-paste embed snippet, so that onboarding a client is fast and its lifecycle is controllable.
+
+#### Acceptance Criteria
+
+1. WHEN the Operator provisions an agency, THE Command_Center SHALL create a Tenant (name, plan, status `active`) and SHALL generate a unique Widget_Id.
+2. WHEN an agency has been provisioned, THE Command_Center SHALL return a copyable Embed_Snippet together with the per-tenant widget authentication mapping.
+3. THE Tenant status SHALL be one of `{active, suspended, archived}`.
+4. WHERE a Tenant status is `suspended` or `archived`, THE Bot SHALL stop serving that Tenant and SHALL return a disabled response.
+5. WHEN the Operator suspends, reactivates, or archives a Tenant, THE Command_Center SHALL require an Admin_Session and a valid CSRF token and SHALL append an Audit_Log entry.
+6. WHEN the Operator lists agencies, THE Command_Center SHALL display each agency's status, plan, owning client, and Widget_Id without exposing any secret.
+7. THE Command_Center SHALL restrict Provisioning to the super-admin Operator; self-serve sign-up is out of scope and per-user identities are covered by Requirement 15.
