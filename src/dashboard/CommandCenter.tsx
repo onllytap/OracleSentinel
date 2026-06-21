@@ -2824,8 +2824,8 @@ function WorkerDetail({ name, onClose }: { name: string | null; onClose: () => v
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Stat label="Compat date" value={data.compatibilityDate || "—"} />
-              <Stat label="Usage model" value={data.usageModel || "—"} />
+              <Stat label="Date de compatibilité" value={data.compatibilityDate || "non définie"} />
+              <Stat label="Modèle d'usage" value={data.usageModel || "standard"} />
             </div>
 
             <div className="space-y-1.5 rounded-lg border bg-card/40 p-3 text-sm">
