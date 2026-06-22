@@ -285,3 +285,249 @@ export async function getTenantOwners(): Promise<Record<string, TenantOwner>> {
   );
   return j?.owners || {};
 }
+
+// ============================================================================
+// Wave 3 — per-agency QG screens: tenant CRM, billing, provisioning, metrics,
+// redeploy, TOTP, RGPD.
+// Reads use getJSON (response is the backend's { success, ...payload }); writes
+// use apiFetch (CSRF auto-sent) and throw a helpful message on !res.ok.
+// SECURITY: none of these ever return a secret value. The CRM state exposes only
+// `hasCredentials` (boolean) — never the key/token/webhook secret.
+// ============================================================================
+
+// ── Tenant CRM (R17) ─────────────────────────────────────────────────────────
+export type TenantCrmProvider = "none" | "twenty" | "airtable" | "webhook";
+
+export interface TenantCrmConfig {
+  tenantId: string;
+  provider: TenantCrmProvider;
+  enabled: boolean;
+  /** Boolean ONLY — true when encrypted credentials exist. Never the value. */
+  hasCredentials: boolean;
+  fieldMappings: Record<string, string>;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface TenantCrmInput {
+  provider: TenantCrmProvider;
+  enabled: boolean;
+  fieldMappings?: Record<string, string>;
+  /** Sent ONLY on save; encrypted server-side; never returned afterwards. */
+  secrets?: Record<string, string>;
+}
+
+export async function getTenantCrm(tenantId: string): Promise<TenantCrmConfig> {
+  return getJSON<TenantCrmConfig>(`/api/priv/tenants/${encodeURIComponent(tenantId)}/crm`);
+}
+
+export async function saveTenantCrm(tenantId: string, input: TenantCrmInput): Promise<TenantCrmConfig> {
+  const res = await apiFetch(`/api/priv/tenants/${encodeURIComponent(tenantId)}/crm`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Enregistrement CRM impossible (HTTP ${res.status}).`));
+  return res.json();
+}
+
+export async function testTenantCrm(tenantId: string): Promise<{ ok: boolean; message: string }> {
+  const res = await apiFetch(`/api/priv/tenants/${encodeURIComponent(tenantId)}/crm/test`, {
+    method: "POST",
+    body: "{}",
+  });
+  if (!res.ok) throw new Error(await readError(res, `Test de connexion impossible (HTTP ${res.status}).`));
+  return res.json();
+}
+
+// ── Billing & quotas (R18) ─────────────────────────────────────────────────────
+export type PlanId = "starter" | "pro" | "scale";
+export type UsageKind = "message" | "lead" | "conversation";
+
+export interface PlanDef {
+  id: PlanId;
+  priceEur: number;
+  quotas: Record<UsageKind, number>;
+  stripePriceId?: string;
+}
+
+export interface TenantBilling {
+  plan: PlanId;
+  status: string;
+  usage: Record<UsageKind, number>;
+  quota: Record<UsageKind, number>;
+  overQuota: boolean;
+  subscription: {
+    tenantId: string;
+    plan: PlanId;
+    status: string;
+    currentPeriodEnd: string | null;
+    stripeCustomerId: string | null;
+  } | null;
+}
+
+export async function getPlans(): Promise<PlanDef[]> {
+  const j = await getJSON<{ success: boolean; plans: PlanDef[] }>("/api/priv/billing/plans");
+  return Array.isArray(j?.plans) ? j.plans : [];
+}
+
+export async function getTenantBilling(tenantId: string): Promise<TenantBilling> {
+  return getJSON<TenantBilling>(`/api/priv/tenants/${encodeURIComponent(tenantId)}/billing`);
+}
+
+export async function setTenantPlan(tenantId: string, plan: PlanId): Promise<TenantBilling> {
+  const res = await apiFetch(`/api/priv/tenants/${encodeURIComponent(tenantId)}/billing/plan`, {
+    method: "PUT",
+    body: JSON.stringify({ plan }),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Changement de plan impossible (HTTP ${res.status}).`));
+  return res.json();
+}
+
+// ── Provisioning (R19) ──────────────────────────────────────────────────────────
+export type TenantStatus = "active" | "suspended" | "archived";
+
+export interface TenantRecord {
+  tenantId: string;
+  name: string;
+  widgetId: string;
+  status: TenantStatus;
+  plan: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listTenants(): Promise<TenantRecord[]> {
+  const j = await getJSON<{ success: boolean; tenants: TenantRecord[] }>("/api/priv/tenants");
+  return Array.isArray(j?.tenants) ? j.tenants : [];
+}
+
+export async function provisionTenant(input: {
+  name: string;
+  plan?: string;
+  tenantId?: string;
+}): Promise<{ tenant: TenantRecord; embedSnippet: string }> {
+  const res = await apiFetch("/api/priv/tenants/provision", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Provisioning impossible (HTTP ${res.status}).`));
+  const j = await res.json();
+  return { tenant: j.tenant, embedSnippet: j.embedSnippet };
+}
+
+export async function setTenantStatusApi(tenantId: string, status: TenantStatus): Promise<TenantRecord> {
+  const res = await apiFetch(`/api/priv/tenants/${encodeURIComponent(tenantId)}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Changement de statut impossible (HTTP ${res.status}).`));
+  const j = await res.json();
+  return j.tenant;
+}
+
+// ── Real metrics (R6/R7) ──────────────────────────────────────────────────────────
+export interface BotMetrics {
+  tenantId: string;
+  messageCount: number;
+  measuredLatencyMs: number | null;
+  responseRate: number;
+  lastActivityAt: string | null;
+  hostingLocation: string;
+}
+
+export async function getFleetMetrics(): Promise<BotMetrics[]> {
+  const j = await getJSON<{ success: boolean; metrics: BotMetrics[] }>("/api/priv/metrics");
+  return Array.isArray(j?.metrics) ? j.metrics : [];
+}
+
+export async function getTenantMetrics(tenantId: string): Promise<BotMetrics> {
+  return getJSON<BotMetrics>(`/api/priv/tenants/${encodeURIComponent(tenantId)}/metrics`);
+}
+
+// ── Redeploy (R3/R4) ────────────────────────────────────────────────────────────────
+export type RedeployStatus = "pending" | "in_progress" | "succeeded" | "failed" | "rolled_back";
+
+export interface RedeployState {
+  tenantId: string;
+  status: RedeployStatus;
+  configVersion: number | null;
+  activeVersion: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error?: string;
+}
+
+export async function getRedeploy(
+  tenantId: string,
+): Promise<{ state: RedeployState; latestVersion: number | null; outOfDate: boolean }> {
+  const j = await getJSON<{
+    success: boolean;
+    state: RedeployState;
+    latestVersion: number | null;
+    outOfDate: boolean;
+  }>(`/api/priv/tenants/${encodeURIComponent(tenantId)}/redeploy`);
+  return { state: j.state, latestVersion: j.latestVersion ?? null, outOfDate: !!j.outOfDate };
+}
+
+export async function triggerRedeploy(tenantId: string): Promise<RedeployState> {
+  const res = await apiFetch(`/api/priv/tenants/${encodeURIComponent(tenantId)}/redeploy`, {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Redéploiement impossible (HTTP ${res.status}).`));
+  const j = await res.json();
+  return j.state;
+}
+
+// ── TOTP (R11–R14) ───────────────────────────────────────────────────────────────────
+export interface TotpStatusInfo {
+  enrolled: boolean;
+  activated: boolean;
+}
+
+export async function totpStatus(): Promise<TotpStatusInfo> {
+  const j = await getJSON<{ success: boolean; enrolled: boolean; activated: boolean }>(
+    "/api/admin/totp/status",
+  );
+  return { enrolled: !!j?.enrolled, activated: !!j?.activated };
+}
+
+export async function totpBegin(): Promise<{ secret: string; otpauthUri: string }> {
+  const res = await apiFetch("/api/admin/totp/begin", { method: "POST", body: "{}" });
+  if (!res.ok) throw new Error(await readError(res, `Démarrage de l'enrôlement TOTP impossible (HTTP ${res.status}).`));
+  const j = await res.json();
+  return { secret: j.secret, otpauthUri: j.otpauthUri };
+}
+
+export async function totpActivate(code: string): Promise<string[]> {
+  const res = await apiFetch("/api/admin/totp/activate", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Activation TOTP refusée (HTTP ${res.status}).`));
+  const j = await res.json();
+  return Array.isArray(j?.recoveryCodes) ? j.recoveryCodes : [];
+}
+
+export async function totpDisable(opts: { code?: string; recoveryCode?: string }): Promise<void> {
+  const res = await apiFetch("/api/admin/totp/disable", {
+    method: "POST",
+    body: JSON.stringify(opts),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Désactivation TOTP refusée (HTTP ${res.status}).`));
+}
+
+// ── RGPD (export / anonymisation par tenant) ─────────────────────────────────────────
+export async function rgpdExport(tenantId: string): Promise<any> {
+  return getJSON(`/api/priv/tenants/${encodeURIComponent(tenantId)}/rgpd/export`);
+}
+
+export async function rgpdAnonymize(tenantId: string): Promise<{ anonymized: number }> {
+  const res = await apiFetch(`/api/priv/tenants/${encodeURIComponent(tenantId)}/rgpd`, {
+    method: "DELETE",
+    body: JSON.stringify({ confirm: true, confirmTenantId: tenantId }),
+  });
+  if (!res.ok) throw new Error(await readError(res, `Anonymisation impossible (HTTP ${res.status}).`));
+  const j = await res.json();
+  return { anonymized: j.anonymized ?? 0 };
+}

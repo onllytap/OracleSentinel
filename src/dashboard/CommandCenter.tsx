@@ -102,8 +102,13 @@ import {
   type ClientInput,
   type TenantOwner,
 } from "./api";
+// Wave 3 — per-agency QG screens (each a self-contained view file).
+import CrmView from "./views/CrmView";
+import BillingView from "./views/BillingView";
+import ProvisioningView from "./views/ProvisioningView";
+import SettingsView from "./views/SettingsView";
 
-type View = "overview" | "chatbots" | "clients" | "surveillance" | "workers" | "conversations" | "infra";
+type View = "overview" | "chatbots" | "clients" | "crm" | "billing" | "provisioning" | "surveillance" | "workers" | "conversations" | "infra" | "settings";
 
 // ── Reusable: friendly error state ───────────────────────────────────────────
 
@@ -386,10 +391,14 @@ const NAV: { id: View; label: string; icon: Icon3DName }[] = [
   { id: "overview", label: "Vue d'ensemble", icon: "overview" },
   { id: "chatbots", label: "Chatbots", icon: "chatbots" },
   { id: "clients", label: "Clients", icon: "clients" },
+  { id: "crm", label: "CRM par agence", icon: "key" },
+  { id: "billing", label: "Facturation", icon: "shield" },
+  { id: "provisioning", label: "Provisioning", icon: "rocket" },
   { id: "surveillance", label: "Surveillance", icon: "surveillance" },
   { id: "workers", label: "Workers", icon: "workers" },
   { id: "conversations", label: "Conversations", icon: "conversations" },
   { id: "infra", label: "Infrastructure", icon: "infra" },
+  { id: "settings", label: "Réglages", icon: "settings" },
 ];
 
 function Sidebar({
@@ -3099,13 +3108,21 @@ export function CommandCenter() {
         ? "Chatbots déployés"
         : view === "clients"
           ? "Clients"
-          : view === "surveillance"
-            ? "Mur de surveillance"
-            : view === "workers"
-              ? "Workers Cloudflare"
-              : view === "conversations"
-                ? "Conversations & Leads"
-                : "Infrastructure";
+          : view === "crm"
+            ? "CRM par agence"
+            : view === "billing"
+              ? "Facturation & quotas"
+              : view === "provisioning"
+                ? "Provisioning d'agences"
+                : view === "surveillance"
+                  ? "Mur de surveillance"
+                  : view === "workers"
+                    ? "Workers Cloudflare"
+                    : view === "conversations"
+                      ? "Conversations & Leads"
+                      : view === "settings"
+                        ? "Réglages & sécurité"
+                        : "Infrastructure";
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -3149,10 +3166,14 @@ export function CommandCenter() {
           {view === "overview" && <OverviewView nonce={nonce} />}
           {view === "chatbots" && <ChatbotsView nonce={nonce} />}
           {view === "clients" && <ClientsView nonce={nonce} />}
+          {view === "crm" && <CrmView nonce={nonce} />}
+          {view === "billing" && <BillingView nonce={nonce} />}
+          {view === "provisioning" && <ProvisioningView nonce={nonce} />}
           {view === "surveillance" && <SurveillanceView nonce={nonce} onSelect={setSelected} />}
           {view === "workers" && <WorkersView nonce={nonce} />}
           {view === "conversations" && <ConversationsView nonce={nonce} />}
           {view === "infra" && <InfraView nonce={nonce} onHealth={setHealth} />}
+          {view === "settings" && <SettingsView nonce={nonce} />}
         </div>
       </main>
       <BotDetail bot={selected} onClose={() => setSelected(null)} onDeleted={() => setNonce((n) => n + 1)} />
