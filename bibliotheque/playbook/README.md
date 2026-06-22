@@ -20,6 +20,7 @@ Pas de "je dois tout comprendre". Pas de "je suis débordé". Une mission. Un jo
 | `01_KIT_DE_VENTE.md` | Les scripts prêts à copier (email, appel, vidéo, fiche 1 page) | Quand une mission dit "envoie" ou "appelle" |
 | `02_OBJECTIONS.md` | Quoi répondre quand un client hésite ou dit non | Avant un appel / un RDV |
 | `03_SCOREBOARD.md` | Ton tableau de score (combien de démos, de RDV, de clients) | Le soir, 2 min, pour cocher |
+| **`04_MONEY_MAP.md`** 💰 | La route chiffrée vers 30 000 € (pricing, scénarios, phases) | Quand tu veux voir la grande image / le but |
 
 ---
 
