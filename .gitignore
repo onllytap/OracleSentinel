@@ -68,3 +68,9 @@ server.log
 
 # MCP config peut contenir des tokens/PAT (Sentry, GitHub) — ne jamais committer
 .kiro/settings/mcp.json
+
+# ---------------------------------------------
+# Playbook commercial / stratégie de vente — PRIVÉ, ne JAMAIS committer.
+# Contenu sensible (méthode de prospection, pricing, money map). Reste local.
+# ---------------------------------------------
+bibliotheque/playbook/
