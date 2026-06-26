@@ -22,10 +22,17 @@ const nonEmptyString = (label: string) =>
     .string({ error: `${label} est requis` })
     .min(1, `${label} ne peut pas être vide`);
 
-const hexColor = z
-  .string()
-  .regex(/^#[0-9a-fA-F]{6}$/, "Couleur hex invalide (ex: #6366f1)")
-  .default("#6366f1");
+// Couleur hex 6 chiffres (#rrggbb). Une chaîne vide ou absente retombe sur la
+// valeur par défaut au lieu d'échouer : loadCurrentConfig() renvoie "" quand les
+// FACTORY_THEME_* ne sont pas définies, ce qui bloquait sinon TOUTE sauvegarde de
+// config (les couleurs non vides restent strictement validées).
+const hexColor = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Couleur hex invalide (ex: #6366f1)")
+    .default("#6366f1"),
+);
 
 const urlString = z
   .string()
