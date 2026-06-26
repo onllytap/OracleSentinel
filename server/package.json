@@ -19,6 +19,7 @@
     "ingest-dvf": "ts-node scripts/ingest-dvf.ts",
     "factory:smoke": "ts-node scripts/factory-smoke.ts",
     "factory:smoke:full": "ts-node scripts/factory-smoke.ts --phase2",
+    "deploy:check": "node scripts/deploy-check.mjs",
     "test:ui-build": "ts-node scripts/test-ui-build.ts"
   },
   "keywords": [],
