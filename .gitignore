@@ -74,3 +74,13 @@ server.log
 # Contenu sensible (méthode de prospection, pricing, money map). Reste local.
 # ---------------------------------------------
 bibliotheque/playbook/
+
+# ─────────────────────────────────────────────
+# Dépôt public = SOURCE UNIQUEMENT (décision propriétaire, 2026-06-19).
+# Toute la documentation interne (bibliotheque/, handoff, audit, ADR),
+# la librairie de skills (.agents/skills/**) et les specs (.kiro/specs)
+# sont en MARKDOWN et ne doivent PAS être versionnées sur le dépôt public.
+# Elles restent EN LOCAL sur le disque (et dans l'historique git avant ce point).
+# Le dépôt GitHub ne garde que la source directe du chatbot.
+# ─────────────────────────────────────────────
+*.md
