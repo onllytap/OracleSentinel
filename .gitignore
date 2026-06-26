@@ -82,5 +82,7 @@ bibliotheque/playbook/
 # sont en MARKDOWN et ne doivent PAS être versionnées sur le dépôt public.
 # Elles restent EN LOCAL sur le disque (et dans l'historique git avant ce point).
 # Le dépôt GitHub ne garde que la source directe du chatbot.
+# Exception : le README.md (vitrine du dépôt) reste versionné.
 # ─────────────────────────────────────────────
 *.md
+!README.md
