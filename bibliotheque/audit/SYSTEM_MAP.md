@@ -45,7 +45,8 @@ Nom de marque : **Sentinel** = la partie chatbot/widget ; **Oracle** = la partie
 **Surfaces d'administration (le « QG ») :**
 - `/admin` — visualisation DB, CRUD catalogue, purge tenant.
 - `/factory` — configuration agent, pipeline de build, import knowledge, tests connexions, rollback.
-- `/priv` — Command Center : monitoring infra temps réel (super-admin).
+- `/priv` — page légère de supervision infra + flotte (repli).
+- `/qg` — **Command Center React** (servi en prod, CSP stricte) : supervision flotte + gestion distante des bots (config par tenant versionnée, redéploiement contrôlé, provisioning, clients, CRM par agence, métriques, 2FA). API sous `/api/priv/*`. _(Ajouté QG v2.1 — voir `architecture/ARCHITECTURE.md` §10.)_
 
 C'est le **seul** système où des modifications de code sont autorisées dans cette mission.
 

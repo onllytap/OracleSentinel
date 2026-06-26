@@ -182,3 +182,83 @@ Défense en profondeur : en-têtes, CORS allowlist, rate-limit persistant, JWT w
 5. **CRM multi-provider** via une couche d'abstraction (`services/crm`) — Airtable + Twenty.
 
 Les évolutions proposées (QG unifié, gestion distante contrôlée, RLS, migrations versionnées) sont documentées sous `bibliotheque/decisions/` (ADR).
+
+
+---
+
+## 10. Mise à jour 2026-06-19 (soir) — Synchronisation avec le code réel (QG v2.1 / « Waves 0-3 »)
+
+> Les sections 1-9 décrivent le **socle** (toujours exact). Cette section met l'architecture
+> à niveau avec ce qui a été livré depuis sur `main` (commit `9346634`) **et** signale le WIP
+> local non commité. Tout ce qui suit est **vérifié dans le code** (`server/src/index.ts`,
+> `routes/`, `services/`, `utils/crypto.ts`) le 2026-06-19. Source autoritative du cadrage :
+> `.kiro/specs/command-center-remote-control/requirements.md` (exigences R1-R19, EARS).
+
+### 10.1 Le QG est passé d'« observation » à « plan de contrôle » de la flotte
+Le Command Center React (`src/dashboard/CommandCenter.tsx`) est désormais **servi en production à `/qg`**
+(build racine `npm run build` → `build/dashboard.html`), derrière une **CSP stricte** (`script-src 'self'`)
+et la session admin. La page légère **`/priv`** est conservée en repli. Tous les routeurs enrichis sont
+montés sous **`/api/priv`**, chacun gardé par `requireAdminSession()` (et `requireCSRF()` sur les mutations),
+derrière un middleware **`adminIpAllowlist()`** optionnel (désactivé par défaut ; activé via `ADMIN_IP_ALLOWLIST`).
+
+### 10.2 Surface API réelle sous `/api/priv` (vérifiée dans `index.ts`)
+
+| Routeur (fichier) | Rôle | Chemins notables | Auth |
+|---|---|---|---|
+| `command-center.routes.ts` | Supervision + config par tenant + registre clients | `/infra`, `/overview` (santé flotte), `/surveillance`, `/workers` & `/workers/:name` (Cloudflare, **lecture seule**), `/tenants/:id/config` (GET/PUT/`/versions`/`/rollback`), `/clients` CRUD + `/clients/:id/tenants` (assign/unassign), `/tenant-owners` | session (+CSRF sur écritures) |
+| `tenant.routes.ts` | Provisioning d'agences (R19) | `/tenants` (liste), `/tenants/provision` (+ embed snippet), `/tenants/:id`, `/tenants/:id/status` (active/suspended/archived) | session (+CSRF) |
+| `tenant-crm.routes.ts` | CRM **par agence** (R17) | config CRM par tenant (provider, mapping, secrets **chiffrés**), test de connexion | session (+CSRF) |
+| `billing.routes.ts` | Facturation & quotas (R18) | plans, quota/usage, abonnement (vue publique non secrète) | session |
+| `redeploy.routes.ts` | Redéploiement contrôlé par bot (R3/R4) | `/tenants/:id/redeploy` (GET état + `outOfDate`; POST avec `confirm:true`, **single-flight** → 409 si en cours) | session (+CSRF) |
+| `metrics.routes.ts` | Métriques réelles par bot (R6/R7) | message_count, latence **mesurée** (ping actif), response rate, dernière activité | session |
+| `rgpd.routes.ts` | Opérations RGPD (export/effacement) | endpoints conformité par tenant | session (+CSRF) |
+| `mandates.routes.ts` | Mandats immobiliers (module estimation) — **WIP local** | gestion des mandats capturés | session |
+
+> Détail précis vérifié pour `command-center`, `redeploy`, `tenant` (chemins lus). Pour
+> `tenant-crm`, `billing`, `metrics`, `rgpd` : routeur + point de montage `/api/priv` confirmés
+> dans `index.ts` ; les sous-chemins exacts sont à lire dans chaque fichier au besoin.
+
+**Webhook public** : `POST /api/billing/webhook` est monté **avant `express.json()`** (corps brut requis
+pour la vérification de signature Stripe), et dégrade proprement en `503` tant que la facturation n'est
+pas configurée. **Endpoint public widget** : `POST /api/estimate` (estimation dans le chatbot — WIP).
+
+### 10.3 Nouveaux services backend (`server/src/services/`)
+`cloudflare` (API Workers, lecture seule + health-ping), `redeploy` (état + single-flight),
+`tenant` (provisioning), `tenant-config` (override par tenant **versionné** + rollback + bloc de prompt effectif),
+`tenant-crm` (CRM par agence, secrets chiffrés), `client` (registre clients + rattachement bots),
+`billing` (Stripe, quotas — inerte si `BILLING_ENABLED!=true`), `metrics` (métriques réelles),
+`surveillance` (mur temps réel), `fleet` (santé flotte), `audit` (journal append-only des actions),
+`totp` + `passkey` (2FA), plus le module **estimation** (`estimation`, `estimation-capture`, `dpe`) — WIP.
+
+### 10.4 Modèle de données — ajouts (créés au boot par `ensure-db.ts`, idempotent)
+Au-delà des tables de la §4 : `tenant_crm_configs` (config CRM par tenant, secrets **chiffrés**),
+`tenant_subscriptions` + `usage_events` (facturation/quotas), tables de **versions de config par tenant**
+(historique + rollback), `clients` (+ table de rattachement client↔tenant), table **tenants** (provisioning),
+**journal d'audit** append-only, stockage **chiffré** du secret TOTP. (WIP estimation : tables estimations/mandats/DPE.)
+
+### 10.5 Sécurité — ajouts structurants (vérifiés)
+- **Chiffrement au repos AES-256-GCM** (`utils/crypto.ts`) : clé `APP_ENCRYPTION_KEY` (64 hex / 32 octets),
+  format `base64(iv 12o ‖ tag 16o ‖ ciphertext)`, **refus de démarrer en prod sans clé valide**, tag GCM
+  vérifié au déchiffrement (détection d'altération). Protège les secrets CRM par tenant et le secret TOTP.
+- **2FA TOTP obligatoire** (R11-R14) : `ADMIN_API_KEY` + code TOTP (RFC 6238) → session ; enrôlement via
+  Settings, **codes de récupération** à usage unique, mécanisme **break-glass** configurable. Services `totp`/`passkey`.
+- **Webhook Stripe** : signature vérifiée **manuellement** (HMAC-SHA256 `node:crypto`, comparaison à temps
+  constant, fenêtre de tolérance 300 s) — aucune dépendance SDK, secret/raw-body jamais loggés.
+- **`adminIpAllowlist()`** : allowlist d'IP optionnelle sur `/admin` et `/api/priv` (défense en profondeur).
+- **`/qg`** servi avec CSP stricte ; `/priv` également durci (CSP, `no-store`, `X-Frame-Options: DENY`).
+
+### 10.6 Module « machine à mandats » (estimation) — WIP **non commité**
+Présent dans le working tree, **pas encore sur `main`** : routes `estimation.routes.ts` + `mandates.routes.ts`,
+services `estimation` / `estimation-capture` / `dpe`, front `EstimationForm.tsx` + `dashboard/views/MandatesView.tsx`,
+script `server/scripts/ingest-dvf.ts`. Objectif : estimation immobilière (DVF/DPE) dans le widget → capture de mandat.
+**À traiter dans sa propre branche** (cf. règles multi-agents) ; non audité ici car non figé.
+
+### 10.7 Statut de la roadmap de contrôle à distance (`ROADMAP_QG_REMOTE_CONTROL.md`)
+| Phase roadmap | État réel constaté dans le code |
+|---|---|
+| Phase 1 — Vision Workers (lecture seule) | **Implémentée** (`/api/priv/workers`, `cloudflare.service`, dégrade si token absent) |
+| Phase 2 — Config éditable + redéploiement | **Implémentée** (config par tenant versionnée + rollback ; `redeploy` avec confirmation + single-flight) |
+| Phase 3 — Monitoring avancé | **Partielle** (`surveillance`, `metrics`, santé flotte ; historique/alertes à confirmer) |
+| Phase 4 — Conversations (soft/hard delete) | À vérifier / probablement à faire |
+| Phase 5 — Actions Worker destructives | À faire (dernier, le plus risqué) |
+| Phase 6 — Permissions multi-utilisateur + rôles | Socle 2FA présent ; rôles `viewer/operator/owner` à formaliser (R15) |

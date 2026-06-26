@@ -159,3 +159,62 @@ Cotation : **Critique / Élevée / Moyenne / Faible / Info**. La sévérité tie
 - L'exposition réseau réelle du port PostgreSQL (`5433`) dépend du pare-feu/reverse-proxy du VPS, non inspectable depuis ce dossier.
 - La présence éventuelle de PII dans les logs en production (revue statique seulement ; pas d'accès aux logs runtime).
 - L'efficacité runtime du rate-limit/CSRF n'a pas été testée dynamiquement (pas de serveur lancé en Phase 0).
+
+
+---
+
+## 7. Mise à jour 2026-06-19 (soir) — Re-audit du périmètre élargi (QG v2.1)
+
+> Depuis la rédaction des §1-6, le QG s'est enrichi (Waves 0-3, sur `main@9346634`) : CRM par agence,
+> facturation Stripe, provisioning, métriques, 2FA TOTP, contrôle distant. Cette section **re-audite la
+> nouvelle surface** d'attaque. Méthode identique : lecture du code réel, `npm audit`, aucune modification.
+
+### 7.1 Vérification des findings antérieurs (état au soir)
+- **F2** (form-data) → **RÉSOLU** : `npm audit` racine **et** serveur ⇒ **0 vulnérabilité** (re-vérifié ce soir,
+  malgré l'ajout des dépendances des Waves). F1, F3, F4, F7, F9, F10 traités (cf. `REMEDIATION_LOG.md`).
+  F5 (backups), F8 (RLS) restent des décisions opérateur / différées documentées.
+
+### 7.2 Nouvelle surface — contrôles validés ✅
+| Contrôle | Implémentation vérifiée | Fichier |
+|---|---|---|
+| **Chiffrement secrets au repos** | AES-256-GCM correct (IV 12o, authTag 16o vérifié, clé 32o via `APP_ENCRYPTION_KEY`). **Refuse de démarrer en prod sans clé** ; clé DEV dérivée hors prod uniquement | `utils/crypto.ts` |
+| **CRM par agence** | Secrets **chiffrés** en base, **jamais renvoyés** par l'API (`hasCredentials: bool` seulement) ; push fail-safe (`handled:false` → repli global) | `services/tenant-crm.service.ts` |
+| **Webhook Stripe** | Signature HMAC-SHA256 vérifiée manuellement, **comparaison à temps constant**, fenêtre 300 s anti-rejeu ; jamais 500 (anti retry-storm) ; secret & raw-body **jamais loggés** | `services/billing.service.ts`, `index.ts` |
+| **Facturation inerte par défaut** | `BILLING_ENABLED!=true` ⇒ `recordUsage` no-op, `isOverQuota` toujours `false` (jamais de blocage du hot path chat) | `services/billing.service.ts` |
+| **2FA TOTP** | `ADMIN_API_KEY` + TOTP (RFC 6238) ; codes de récupération à usage unique ; break-glass tracé ; secret TOTP chiffré, jamais renvoyé après enrôlement | `services/totp.service.ts`, spec R11-R14 |
+| **Contrôle distant gardé** | Toutes les routes `/api/priv/*` sous `requireAdminSession` (+`requireCSRF` sur écritures) ; `redeploy` exige `confirm:true` + single-flight (409) ; rollback borné | `routes/*.routes.ts` |
+| **Isolation par tenant** | Validation stricte `tenantId` (`/^[a-zA-Z0-9_.-]{1,100}$/`) sur chaque route ; chemins mono-segment → pas de shadowing entre routeurs | `tenant.routes.ts`, `redeploy.routes.ts` |
+| **Défense réseau (option)** | `adminIpAllowlist()` sur `/admin` + `/api/priv` (activable via `ADMIN_IP_ALLOWLIST`) ; `/qg` & `/priv` en CSP stricte | `index.ts`, `command-center.routes.ts` |
+
+### 7.3 Findings nouveaux (priorisés)
+
+#### F15 — `APP_ENCRYPTION_KEY` : variable critique à exiger explicitement au déploiement — **MOYENNE**
+- **Constat** : sans `APP_ENCRYPTION_KEY` valide, le serveur **refuse** d'enregistrer/lire les secrets CRM par
+  agence (comportement voulu, sûr). Mais si la clé est **perdue ou tournée sans migration**, les blobs CRM
+  existants deviennent **indéchiffrables** (perte de la config CRM par tenant, pas des leads).
+- **Reco** : documenter la clé comme **secret de prod obligatoire** (au même rang que `POSTGRES_PASSWORD`/
+  `ADMIN_SESSION_SECRET`), prévoir une **procédure de rotation** (ré-chiffrement des blobs) et une sauvegarde
+  sûre de la clé. Action : doc + `.env.example` (non destructif).
+
+#### F16 — Stockage du secret 2FA TOTP : confirmer le chiffrement effectif — **À VÉRIFIER (probable Faible)**
+- **Constat** : la spec (R14) exige le secret TOTP **chiffré au repos** et jamais renvoyé après enrôlement.
+  `utils/crypto.ts` fournit le bon primitif ; à **confirmer par lecture** de `totp.service.ts` que le secret
+  est bien stocké via `encryptSecret`/`encryptJson` (et non en clair), et que les codes de récupération sont
+  **hashés**. Probable conforme vu la qualité du reste ; vérification de revue ciblée recommandée.
+
+#### F17 — Endpoints RGPD : valider l'autorisation et l'audit des opérations destructives — **À VÉRIFIER**
+- **Constat** : `rgpd.routes.ts` (export/effacement) manipule des données personnelles. À confirmer : (a) gardé
+  `requireAdminSession`+`requireCSRF`, (b) **double confirmation** pour un effacement définitif, (c) **journalisé**
+  dans `audit.service`. Aligné avec la philosophie « soft-delete d'abord » de la roadmap.
+
+#### F18 — Module estimation (WIP) hors périmètre d'audit figé — **INFO**
+- **Constat** : `estimation`/`mandates`/`dpe` (routes + services + UI) sont **non commités** et instables.
+  `/api/estimate` est public (sous rate-limit `/api/`). **À auditer dans sa branche** une fois figé
+  (validation Zod des entrées, pas de PII en clair dans les logs, idempotence de la capture de mandat).
+
+### 7.4 Verdict du re-audit
+La nouvelle surface est **construite avec une bonne hygiène sécurité** : chiffrement au repos correct,
+vérification de signature webhook robuste, secrets jamais exposés, gardes session/CSRF systématiques,
+fonctionnalités sensibles inertes par défaut. **0 vulnérabilité de dépendance**. Les findings F15-F17 sont
+des **vérifications/documentations** (non des failles avérées) ; F18 attend le gel du WIP. Aucune action
+destructive requise ; durcissements proposés non destructifs et alignés sur le handoff.

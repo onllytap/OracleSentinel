@@ -156,3 +156,19 @@ Chaque phase : observer → comprendre → proposer → modifier → tester → 
 ## 8. Ce qui n'a PAS été modifié
 
 Conformément à la Phase 0 et au handoff : **aucun fichier de code n'a été modifié**. Seuls des fichiers de documentation d'audit ont été créés sous `bibliotheque/`. Les commandes exécutées sont non destructives (`npm audit`, `npm ls`, `git status`).
+
+
+---
+
+## 9. Mise à jour 2026-06-19 (soir) — État réel vs plan
+
+> Le plan §7 a **largement progressé**. Synchronisation avec `main@9346634` (vérifié dans le code).
+
+- **Phase 1 (durcissement)** : ✅ faite (F1-F4, F7, F9, F10 — voir `REMEDIATION_LOG.md`). `npm audit` = **0 vuln** (racine + serveur).
+- **Phase 2 (sécurité données)** : partiellement faite — **chiffrement AES-256-GCM au repos** livré (`utils/crypto.ts`) pour les secrets CRM par tenant et le secret TOTP ; RLS (F8) toujours différée (ADR_0003) ; backups `.env.*` (F5) = décision opérateur.
+- **Phase 3 (qualité)** : tests métier ajoutés (Phase 2 du log, 63 tests) ; métriques réelles + surveillance livrées.
+- **Phase 4 (évolution QG & gestion distante)** : **largement livrée** — Command Center React à `/qg`, config par tenant **versionnée + rollback**, **redéploiement contrôlé** (confirmation + single-flight), provisioning d'agences, registre clients, CRM par agence, facturation Stripe, **2FA TOTP**, vue Cloudflare Workers (lecture seule). Cadrage : `.kiro/specs/command-center-remote-control/` (R1-R19).
+
+**Détail architectural à jour** : voir `architecture/ARCHITECTURE.md` §10. **Re-audit sécurité du périmètre élargi** : `SECURITY_REVIEW.md` §7 (findings F15-F18).
+
+**Chantier ouvert (non commité)** : module « machine à mandats » (estimation DVF/DPE → capture de mandat) dans le working tree — à finaliser dans sa propre branche, puis auditer et documenter.
