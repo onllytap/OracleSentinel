@@ -59,6 +59,36 @@ export interface LeadFormPayload {
     details?: string;
 }
 
+export interface EstimatePayload {
+    typeLocal: 'Maison' | 'Appartement';
+    surface?: string | number;
+    pieces?: string | number;
+    address?: string;
+    codePostal?: string;
+    prenom?: string;
+    nom?: string;
+    telephone?: string;
+    email?: string;
+}
+
+export interface EstimateApiResult {
+    ok: boolean;
+    error?: string;
+    estimate?: {
+        available: boolean;
+        surface?: number;
+        pricePerM2Median?: number;
+        lowPrice?: number;
+        midPrice?: number;
+        highPrice?: number;
+        confidence?: 'low' | 'medium' | 'high';
+        disclaimer: string;
+        reason?: string;
+    };
+    dpe?: { available: boolean; etiquette?: string; message: string };
+    location?: { codeCommune?: string; codePostal?: string; label?: string };
+}
+
 // ============================================
 // CONFIGURATION
 // ============================================
@@ -345,5 +375,27 @@ export const api = {
 
         const data = await response.json() as { success?: boolean; pushedToCRM?: boolean };
         return { success: !!data.success, pushedToCRM: !!data.pushedToCRM };
+    },
+
+    /**
+     * Estimation "machine à mandats" : appelle le moteur réel (DVF + DPE) et
+     * capture le vendeur côté serveur. Public (rate-limité côté backend).
+     * widgetId identifie l'agence (attribution du mandat).
+     */
+    estimate: async (payload: EstimatePayload): Promise<EstimateApiResult> => {
+        const controller = createTimeoutController(API_TIMEOUT);
+        const response = await fetch(`${API_BASE_URL}/api/estimate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({ ...payload, widgetId: WIDGET_ID }),
+        });
+
+        if (!response.ok) {
+            const body = await response.json().catch(() => null) as any;
+            throw createApiError(response, body);
+        }
+
+        return await response.json() as EstimateApiResult;
     },
 };

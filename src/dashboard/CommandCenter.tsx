@@ -107,8 +107,9 @@ import CrmView from "./views/CrmView";
 import BillingView from "./views/BillingView";
 import ProvisioningView from "./views/ProvisioningView";
 import SettingsView from "./views/SettingsView";
+import MandatesView from "./views/MandatesView";
 
-type View = "overview" | "chatbots" | "clients" | "crm" | "billing" | "provisioning" | "surveillance" | "workers" | "conversations" | "infra" | "settings";
+type View = "overview" | "chatbots" | "clients" | "mandates" | "crm" | "billing" | "provisioning" | "surveillance" | "workers" | "conversations" | "infra" | "settings";
 
 // ── Reusable: friendly error state ───────────────────────────────────────────
 
@@ -391,6 +392,7 @@ const NAV: { id: View; label: string; icon: Icon3DName }[] = [
   { id: "overview", label: "Vue d'ensemble", icon: "overview" },
   { id: "chatbots", label: "Chatbots", icon: "chatbots" },
   { id: "clients", label: "Clients", icon: "clients" },
+  { id: "mandates", label: "Mandats", icon: "conversations" },
   { id: "crm", label: "CRM par agence", icon: "key" },
   { id: "billing", label: "Facturation", icon: "shield" },
   { id: "provisioning", label: "Provisioning", icon: "rocket" },
@@ -3108,7 +3110,9 @@ export function CommandCenter() {
         ? "Chatbots déployés"
         : view === "clients"
           ? "Clients"
-          : view === "crm"
+          : view === "mandates"
+            ? "Mandats — vendeurs à rappeler"
+            : view === "crm"
             ? "CRM par agence"
             : view === "billing"
               ? "Facturation & quotas"
@@ -3166,6 +3170,7 @@ export function CommandCenter() {
           {view === "overview" && <OverviewView nonce={nonce} />}
           {view === "chatbots" && <ChatbotsView nonce={nonce} />}
           {view === "clients" && <ClientsView nonce={nonce} />}
+          {view === "mandates" && <MandatesView nonce={nonce} />}
           {view === "crm" && <CrmView nonce={nonce} />}
           {view === "billing" && <BillingView nonce={nonce} />}
           {view === "provisioning" && <ProvisioningView nonce={nonce} />}

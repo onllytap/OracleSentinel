@@ -32,6 +32,8 @@ import billingRoutes from "./routes/billing.routes";
 import rgpdRoutes from "./routes/rgpd.routes";
 import metricsRoutes from "./routes/metrics.routes";
 import redeployRoutes from "./routes/redeploy.routes";
+import estimationRoutes from "./routes/estimation.routes";
+import mandatesRoutes from "./routes/mandates.routes";
 import { initDb } from "./db";
 import { assertDatabaseConnection } from "./db/pool";
 import { ensureDbSchema } from "./db/ensure-db";
@@ -212,6 +214,11 @@ app.use("/api/knowledge", knowledgeRoutes);
 app.use("/api/catalog", catalogRoutes);
 app.use("/api/crm/webhook", crmWebhookRoutes);
 
+// ── Module "machine à mandats" — endpoint d'estimation (utilisé par le widget) ─
+// L'estimation se fait DANS le chatbot (bouton "Estimation gratuite" -> formulaire
+// intégré). /api/estimate est public, couvert par le rate-limiter /api/ ci-dessus.
+app.use("/api", estimationRoutes);
+
 // Hidden admin page + admin API (session cookie)
 // adminIpAllowlist() is a no-op unless ADMIN_IP_ALLOWLIST is configured.
 app.get("/admin", adminIpAllowlist(), adminPageHandler);
@@ -234,6 +241,7 @@ app.use("/api/priv", adminIpAllowlist(), billingRoutes);
 app.use("/api/priv", adminIpAllowlist(), rgpdRoutes);
 app.use("/api/priv", adminIpAllowlist(), metricsRoutes);
 app.use("/api/priv", adminIpAllowlist(), redeployRoutes);
+app.use("/api/priv", adminIpAllowlist(), mandatesRoutes);
 
 // ── /qg — Command Center (React) served in production ───────────────────────
 // The full enterprise dashboard (src/dashboard/CommandCenter.tsx) is built by

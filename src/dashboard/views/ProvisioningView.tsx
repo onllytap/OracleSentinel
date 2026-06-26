@@ -47,7 +47,9 @@ export default function ProvisioningView({ nonce }: { nonce: number }) {
   const [plan, setPlan] = useState("starter");
   const [snippet, setSnippet] = useState("");
   const [createdId, setCreatedId] = useState("");
+  const [createdWidgetId, setCreatedWidgetId] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState("");
 
   const load = useCallback(() => {
     setErr("");
@@ -73,6 +75,7 @@ export default function ProvisioningView({ nonce }: { nonce: number }) {
       const { tenant, embedSnippet } = await provisionTenant({ name: name.trim(), plan });
       setSnippet(embedSnippet);
       setCreatedId(tenant.tenantId);
+      setCreatedWidgetId(tenant.widgetId);
       setName("");
       load();
     } catch (e: any) {
@@ -92,6 +95,19 @@ export default function ProvisioningView({ nonce }: { nonce: number }) {
       setErr(e?.message || "Changement de statut impossible");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const estimationUrl = (widgetId: string) =>
+    `${window.location.origin}/estimer?w=${encodeURIComponent(widgetId)}`;
+
+  const copyUrl = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedUrl(key);
+      setTimeout(() => setCopiedUrl(""), 1500);
+    } catch {
+      /* clipboard may be blocked */
     }
   };
 
@@ -154,6 +170,25 @@ export default function ProvisioningView({ nonce }: { nonce: number }) {
               <Button size="sm" variant="outline" onClick={copySnippet}>
                 {copied ? "Copié ✅" : "Copier le snippet"}
               </Button>
+              {createdWidgetId && (
+                <div className="mt-2 border-t border-emerald-500/20 pt-2">
+                  <p className="text-xs font-medium text-emerald-400">
+                    Lien « Estimez votre bien » à donner à l'agence (capte les vendeurs / mandats) :
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <code className="flex-1 break-all rounded bg-background px-2 py-1 text-[11px]">
+                      {estimationUrl(createdWidgetId)}
+                    </code>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => copyUrl(estimationUrl(createdWidgetId), "created")}
+                    >
+                      {copiedUrl === "created" ? "Copié ✅" : "Copier"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -180,6 +215,7 @@ export default function ProvisioningView({ nonce }: { nonce: number }) {
                     <TableHead>Agence</TableHead>
                     <TableHead>tenant_id</TableHead>
                     <TableHead>widget_id</TableHead>
+                    <TableHead>Estimation</TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Plan</TableHead>
                     <TableHead>Statut</TableHead>
@@ -192,6 +228,16 @@ export default function ProvisioningView({ nonce }: { nonce: number }) {
                       <TableCell className="font-medium">{t.name}</TableCell>
                       <TableCell className="font-mono text-xs">{t.tenantId}</TableCell>
                       <TableCell className="font-mono text-[11px] text-muted-foreground">{t.widgetId}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => copyUrl(estimationUrl(t.widgetId), t.tenantId)}
+                        >
+                          {copiedUrl === t.tenantId ? "Copié ✅" : "Copier le lien"}
+                        </Button>
+                      </TableCell>
                       <TableCell>
                         {owners[t.tenantId] ? (
                           <span className="text-xs">{owners[t.tenantId].clientName}</span>

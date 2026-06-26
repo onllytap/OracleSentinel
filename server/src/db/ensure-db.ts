@@ -363,6 +363,60 @@ CREATE TABLE IF NOT EXISTS crm_pushed_leads (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_crm_pushed_leads_created ON crm_pushed_leads (created_at);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Module "machine à mandats" — données DVF (ventes réelles notaires, open data).
+-- Table ADDITIVE, idempotente, au boot. Aucune donnée perso : ce sont des
+-- transactions foncières publiques (data.gouv geo-dvf). Sert au moteur
+-- d'estimation (fourchette indicative par commune/type de bien).
+-- ════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS dvf_sales (
+    id                        BIGSERIAL PRIMARY KEY,
+    id_mutation               VARCHAR(64),
+    date_mutation             DATE,
+    valeur_fonciere           NUMERIC,
+    code_postal               VARCHAR(10),
+    code_commune              VARCHAR(10),
+    commune                   TEXT,
+    type_local                VARCHAR(40),   -- 'Maison' | 'Appartement' | 'Local' ...
+    surface_reelle_bati       NUMERIC,
+    nombre_pieces_principales INTEGER,
+    longitude                 NUMERIC,
+    latitude                  NUMERIC,
+    created_at                TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_dvf_sales_commune_type ON dvf_sales (code_commune, type_local);
+CREATE INDEX IF NOT EXISTS idx_dvf_sales_postal_type ON dvf_sales (code_postal, type_local);
+CREATE INDEX IF NOT EXISTS idx_dvf_sales_geo ON dvf_sales (latitude, longitude);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dvf_sales_dedup ON dvf_sales (id_mutation, code_commune, surface_reelle_bati, valeur_fonciere);
+
+-- Captures "vendeur/mandat" : un propriétaire a demandé une estimation. On stocke
+-- le contact + le résultat (fourchette + DPE) pour alerter/recontacter l'agence.
+-- Pas de secret. tenant_id rattache la capture à l'agence propriétaire.
+CREATE TABLE IF NOT EXISTS estimation_leads (
+    id            BIGSERIAL PRIMARY KEY,
+    tenant_id     VARCHAR(100) NOT NULL DEFAULT 'default',
+    prenom        VARCHAR(120),
+    nom           VARCHAR(120),
+    telephone     VARCHAR(50),
+    email         VARCHAR(200),
+    address       TEXT,
+    code_commune  VARCHAR(10),
+    code_postal   VARCHAR(10),
+    type_local    VARCHAR(40),
+    surface       NUMERIC,
+    pieces        INTEGER,
+    etat          VARCHAR(40),
+    timeline      VARCHAR(60),
+    estimate_low  INTEGER,
+    estimate_mid  INTEGER,
+    estimate_high INTEGER,
+    price_per_m2  INTEGER,
+    dpe           VARCHAR(4),
+    confidence    VARCHAR(10),
+    created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_estimation_leads_tenant_created ON estimation_leads (tenant_id, created_at DESC);
 `;
 
 export async function ensureDbSchema(): Promise<void> {

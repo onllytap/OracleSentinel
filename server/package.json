@@ -16,6 +16,7 @@
     "build:docker": "docker compose build",
     "init-db": "ts-node scripts/init-db.ts",
     "ensure-db": "ts-node scripts/ensure-db.ts",
+    "ingest-dvf": "ts-node scripts/ingest-dvf.ts",
     "factory:smoke": "ts-node scripts/factory-smoke.ts",
     "factory:smoke:full": "ts-node scripts/factory-smoke.ts --phase2",
     "test:ui-build": "ts-node scripts/test-ui-build.ts"

@@ -531,3 +531,29 @@ export async function rgpdAnonymize(tenantId: string): Promise<{ anonymized: num
   const j = await res.json();
   return { anonymized: j.anonymized ?? 0 };
 }
+
+// ── Mandats (leads vendeurs captés via l'estimation) ───────────────────────
+// L'inbox des vendeurs à rappeler. Chaque mandat porte son tenant_id -> on sait
+// quelle agence le possède. Aucune donnée secrète.
+export interface Mandate {
+  id: number;
+  tenant_id: string;
+  prenom: string | null;
+  nom: string | null;
+  telephone: string | null;
+  email: string | null;
+  address: string | null;
+  type_local: string | null;
+  surface: number | null;
+  estimate_mid: number | null;
+  dpe: string | null;
+  created_at: string;
+}
+
+export async function getMandates(tenantId?: string): Promise<Mandate[]> {
+  const qs = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+  const j = await getJSON<{ success: boolean; mandates: Mandate[] }>(
+    `/api/priv/mandates${qs}`,
+  );
+  return j.mandates || [];
+}

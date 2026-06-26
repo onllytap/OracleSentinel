@@ -10,12 +10,12 @@ import { HelpScreen } from './HelpScreen';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useToast } from '../contexts/ToastContext';
-import { api, SourcePage } from '../services/api';
+import { api, SourcePage, EstimatePayload } from '../services/api';
 import { ScrollArea } from './ui/scroll-area';
 
 type Message = {
   id: string;
-  type: 'bot' | 'user' | 'system' | 'form';
+  type: 'bot' | 'user' | 'system' | 'form' | 'estimate';
   content: string;
   timestamp: Date;
   sourcePages?: SourcePage[];
@@ -238,7 +238,7 @@ export function ChatWindow() {
     prevMessagesLength.current = messages.length;
   }, [messages]);
 
-  const addMessage = (content: string, type: 'bot' | 'user' | 'system' | 'form', actions?: ActionButton[]) => {
+  const addMessage = (content: string, type: 'bot' | 'user' | 'system' | 'form' | 'estimate', actions?: ActionButton[]) => {
     const newMessage: Message = {
       id: Date.now().toString(),
       type,
@@ -261,7 +261,9 @@ export function ChatWindow() {
         processUserMessage("Je souhaite être rappelé");
         break;
       case 'request_estimate':
-        processUserMessage("Je souhaite une estimation gratuite de mon bien");
+        // Ouvre le formulaire d'estimation INTÉGRÉ dans le chat (moteur réel)
+        // au lieu d'envoyer un simple message texte.
+        addMessage('', 'estimate');
         break;
       case 'view_properties':
         processUserMessage("Montrez-moi les biens disponibles");
@@ -315,6 +317,14 @@ export function ChatWindow() {
       throw e;
     }
   };
+
+  // Estimation intégrée au chat : appelle le moteur réel (DVF + DPE) et capture
+  // le vendeur. Le résultat est affiché par EstimationForm lui-même.
+  const handleEstimate = useCallback(
+    (payload: Record<string, unknown>) =>
+      api.estimate(payload as unknown as EstimatePayload),
+    [],
+  );
 
   const handleSend = () => {
     if (!input.trim()) return;
@@ -395,6 +405,7 @@ export function ChatWindow() {
                   actions={actionsToShow}
                   onAction={handleAction}
                   onFormSubmit={handleFormSubmit}
+                  onEstimate={handleEstimate}
                   skipAnimation={!message.isNew}
                 />
               </div>

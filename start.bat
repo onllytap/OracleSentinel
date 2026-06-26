@@ -1,12 +1,24 @@
 @echo off
 setlocal EnableExtensions
 chcp 65001 >nul
-title OracleSentinel V2 - Launcher
+title [OBSOLETE] racine OracleSentinel - aller dans Chatbot
+
+echo.
+echo ##############################################################
+echo #   /!\  DOSSIER RACINE OBSOLETE  /!\
+echo #   La VRAIE app est dans le sous-dossier  Chatbot\
+echo #      cd "D:\Chatbot - Copy\Chatbot"  ^&^&  python start.py
+echo #   (voir 000_STOP_VRAIE_APP_DANS_CHATBOT.md)
+echo ##############################################################
+echo.
+echo Appuyez sur une touche pour lancer QUAND MEME la racine obsolete,
+echo ou fermez cette fenetre pour aller dans Chatbot\.
+pause >nul
 
 :: ============================================================================
-::  OracleSentinel V2 - Lanceur (serveur RACINE = la bonne version)
-::  NOTE: ce script ne lance PLUS la V1 du dossier .\Chatbot (obsolete).
-::        Config = .env a la RACINE (charge par le backend via env.ts + le front).
+::  [OBSOLETE] Lanceur de l'ANCIENNE racine OracleSentinel.
+::  La reference a jour est le sous-dossier .\Chatbot (front + back + QG).
+::  (Ancien commentaire trompeur : "serveur RACINE = la bonne version" -> FAUX.)
 :: ============================================================================
 
 set "ROOT_DIR=%~dp0"

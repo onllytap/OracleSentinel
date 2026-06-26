@@ -5,8 +5,10 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useTypewriter, TypingCursor } from '../hooks/useTypewriter';
 import { SourcePage } from '../services/api';
 import { ActionButtons, ActionButton } from './ActionButtons';
+import type { EstimateApiResult } from '../services/api';
 
 const LazyLeadForm = lazy(() => import('./LeadForm').then(m => ({ default: m.LeadForm })));
+const LazyEstimationForm = lazy(() => import('./EstimationForm').then(m => ({ default: m.EstimationForm })));
 
 function FormLoadingFallback() {
   return (
@@ -21,13 +23,14 @@ function FormLoadingFallback() {
 
 // ... (in types)
 export interface MessageBubbleProps {
-  type: 'bot' | 'user' | 'system' | 'form';
+  type: 'bot' | 'user' | 'system' | 'form' | 'estimate';
   content?: string;
   timestamp: Date;
   sourcePages?: SourcePage[];
   actions?: ActionButton[];
   onAction?: (action: ActionButton) => void;
   onFormSubmit?: (data: any) => Promise<void>;
+  onEstimate?: (payload: Record<string, unknown>) => Promise<EstimateApiResult>;
   skipAnimation?: boolean;
   isStreaming?: boolean;
 }
@@ -41,6 +44,7 @@ export function MessageBubble({
   actions,
   onAction,
   onFormSubmit, // New prop
+  onEstimate,
   skipAnimation = false,
   isStreaming = false
 }: MessageBubbleProps) {
@@ -66,6 +70,30 @@ export function MessageBubble({
           {onFormSubmit && (
             <Suspense fallback={<FormLoadingFallback />}>
               <LazyLeadForm onSubmit={onFormSubmit} />
+            </Suspense>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Estimation form message (in-chat estimation, real engine behind it)
+  if (type === 'estimate') {
+    return (
+      <div className="flex gap-2.5 items-start animate-slide-up">
+        <div className="relative flex-shrink-0">
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-green-400/50 shadow-md shadow-green-400/20">
+            <ImageWithFallback
+              src={avatar}
+              alt="AI Assistant"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        </div>
+        <div className="max-w-[95%] sm:max-w-[90%] w-full">
+          {onEstimate && (
+            <Suspense fallback={<FormLoadingFallback />}>
+              <LazyEstimationForm onEstimate={onEstimate} />
             </Suspense>
           )}
         </div>
